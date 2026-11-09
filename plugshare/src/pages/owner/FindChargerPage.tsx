@@ -300,10 +300,40 @@ export default function FindChargerPage() {
               </div>
               <button className="mt-4 text-sm font-semibold text-emerald-700 underline" onClick={() => setSelectedChargerId('')} type="button">Choose a different map pin</button>
               <form className="mt-5 grid gap-3 border-t border-slate-100 pt-5 sm:grid-cols-2" onSubmit={(event) => void bookCharger(event, selectedChargerDetails.charger)}>
-                <select aria-label="Select vehicle" className={fieldClass} onChange={(event) => setVehicleId(event.target.value)} required value={vehicleId}>
-                  <option value="">Select vehicle</option>
-                  {vehicles.map((vehicle) => <option key={vehicle.id} value={vehicle.id}>{vehicle.brand} {vehicle.model}</option>)}
-                </select>
+                <fieldset className="grid gap-3 sm:col-span-2">
+                  <legend className="mb-1 text-sm font-semibold text-slate-800">Choose the car for this booking</legend>
+                  {vehicles.length ? (
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {vehicles.map((vehicle) => (
+                        <label
+                          className={`flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition ${vehicleId === vehicle.id ? 'border-emerald-600 bg-emerald-50 ring-2 ring-emerald-100' : 'border-slate-200 hover:border-emerald-400'}`}
+                          key={vehicle.id}
+                        >
+                          <input
+                            checked={vehicleId === vehicle.id}
+                            className="mt-1 accent-emerald-700"
+                            name="booking-vehicle"
+                            onChange={() => setVehicleId(vehicle.id)}
+                            required
+                            type="radio"
+                            value={vehicle.id}
+                          />
+                          <span>
+                            <span className="block font-semibold text-slate-900">{vehicle.brand} {vehicle.model}</span>
+                            <span className="mt-1 block text-xs text-slate-600">Use this car for the selected charging point</span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-xl bg-amber-50 p-4 text-sm text-amber-900">
+                      Add a car to your account before requesting a booking.
+                    </div>
+                  )}
+                  <Link className="text-sm font-semibold text-emerald-700 underline" to="/owner/dashboard#add-car">
+                    {vehicles.length ? 'Add another car' : 'Add a car'}
+                  </Link>
+                </fieldset>
                 <label className="grid gap-1 text-sm font-medium text-slate-700">
                   Start date and time
                   <span className="text-xs font-normal text-slate-500">When you want the charging session to begin.</span>

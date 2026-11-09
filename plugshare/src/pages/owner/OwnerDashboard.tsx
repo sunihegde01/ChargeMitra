@@ -325,7 +325,10 @@ export default function OwnerDashboard() {
 
         <section className="mt-8 grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
           <div className="rounded-3xl border border-slate-200 bg-white p-6">
-            <h2 className="text-xl font-semibold">Your EVs</h2>
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-xl font-semibold">Your EVs</h2>
+              <a className="text-sm font-semibold text-emerald-700 underline" href="#add-car">Add another car</a>
+            </div>
             {loading ? <p className="mt-4 text-slate-600">Loading vehicles...</p> : vehicles.length ? (
               <ul className="mt-4 divide-y divide-slate-100">
                 {vehicles.map((vehicle) => (
@@ -337,7 +340,7 @@ export default function OwnerDashboard() {
               </ul>
             ) : <p className="mt-4 text-slate-600">Add your car to start booking chargers.</p>}
 
-            <form className="mt-6 grid gap-3 border-t border-slate-100 pt-6 sm:grid-cols-2" onSubmit={addVehicle}>
+            <form className="mt-6 grid gap-3 border-t border-slate-100 pt-6 sm:grid-cols-2" id="add-car" onSubmit={addVehicle}>
               <h3 className="font-semibold sm:col-span-2">Add your car</h3>
               <label className="relative grid gap-1 text-sm font-medium text-slate-700">
                 Company

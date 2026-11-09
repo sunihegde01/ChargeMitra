@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import Map, { Marker, NavigationControl } from 'react-map-gl/maplibre'
@@ -24,6 +24,8 @@ export default function AddChargerPage() {
   const [latitude, setLatitude] = useState('')
   const [longitude, setLongitude] = useState('')
   const [mapViewState, setMapViewState] = useState(defaultMapView)
+  const mapPickerRef = useRef<HTMLDivElement>(null)
+  const [pickingOnMap, setPickingOnMap] = useState(false)
   const [name, setName] = useState('')
   const [chargerType, setChargerType] = useState('AC')
   const [power, setPower] = useState('')
@@ -69,6 +71,7 @@ export default function AddChargerPage() {
   async function setSelectedLocation(latitude: number, longitude: number) {
     setLatitude(String(latitude))
     setLongitude(String(longitude))
+    setPickingOnMap(false)
     setErrorMessage('')
     setSuccessMessage('Location selected. Looking up the address...')
 
@@ -276,6 +279,16 @@ export default function AddChargerPage() {
               >
                 {locating ? 'Getting location and address...' : locationSelected ? 'Location selected · Update location' : 'Use my current location'}
               </button>
+              <button
+                className="ml-2 mt-3 rounded-full bg-amber-400 px-5 py-3 font-semibold text-amber-950 transition hover:bg-amber-300"
+                onClick={() => {
+                  setPickingOnMap(true)
+                  mapPickerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                }}
+                type="button"
+              >
+                {pickingOnMap ? 'Click the map to place the pin' : 'Select location on map'}
+              </button>
               {locationSelected && (
                 <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900" role="status">
                   <p className="font-semibold">Charging point location selected</p>
@@ -283,7 +296,7 @@ export default function AddChargerPage() {
                   <p className="mt-1 text-xs text-emerald-800">Coordinates: {Number(latitude).toFixed(6)}, {Number(longitude).toFixed(6)}</p>
                 </div>
               )}
-              <div className="mt-4 h-[360px] overflow-hidden rounded-2xl border border-slate-200">
+              <div className={`mt-4 h-[360px] overflow-hidden rounded-2xl border border-slate-200 ${pickingOnMap ? 'ring-4 ring-amber-300' : ''}`} ref={mapPickerRef}>
                 <Map
                   {...mapViewState}
                   mapStyle={MAP_STYLE}
@@ -306,7 +319,11 @@ export default function AddChargerPage() {
                   )}
                 </Map>
               </div>
-              <p className="mt-2 text-sm text-slate-600">Drag the map to explore and zoom in for a precise location. This is the host location shown to users for its charging points.</p>
+              <p className={`mt-2 text-sm ${pickingOnMap ? 'font-semibold text-amber-800' : 'text-slate-600'}`}>
+                {pickingOnMap
+                  ? 'Click the map to place the yellow pin exactly where your charging point is located.'
+                  : 'Drag the map to explore and zoom in for a precise location. This is the host location shown to users for its charging points.'}
+              </p>
             </div>
             <label className="flex flex-col gap-2 text-sm font-medium sm:col-span-2">
               Charger name

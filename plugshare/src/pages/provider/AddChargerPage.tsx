@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import Map, { Marker, NavigationControl } from 'react-map-gl/maplibre'
+import 'maplibre-gl/dist/maplibre-gl.css'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../supabase'
 
@@ -8,6 +10,7 @@ type Provider = { id: string; business_name: string; category: string; address: 
 
 const fieldClass = 'w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:border-emerald-700 focus:ring-2 focus:ring-emerald-700/15'
 const categories = ['HOME', 'APARTMENT', 'OFFICE', 'COMMERCIAL', 'OTHER']
+const defaultMapView = { latitude: 20.5937, longitude: 78.9629, zoom: 4 }
 
 export default function AddChargerPage() {
   const { user } = useAuth()
@@ -18,6 +21,7 @@ export default function AddChargerPage() {
   const [address, setAddress] = useState('')
   const [latitude, setLatitude] = useState('')
   const [longitude, setLongitude] = useState('')
+  const [mapViewState, setMapViewState] = useState(defaultMapView)
   const [name, setName] = useState('')
   const [chargerType, setChargerType] = useState('AC')
   const [power, setPower] = useState('')
@@ -53,60 +57,66 @@ export default function AddChargerPage() {
     return () => { active = false }
   }, [user])
 
+  async function setSelectedLocation(latitude: number, longitude: number) {
+    setLatitude(String(latitude))
+    setLongitude(String(longitude))
+    setErrorMessage('')
+    setSuccessMessage('')
+
+    setMapViewState((view) => ({
+      ...view,
+      latitude,
+      longitude,
+      zoom: Math.max(view.zoom, 15),
+    }))
+
+    try {
+      const query = new URLSearchParams({ lat: String(latitude), lon: String(longitude) })
+      const response = await fetch(`https://photon.komoot.io/reverse?${query}`)
+      if (!response.ok) throw new Error(`Address lookup failed (${response.status}).`)
+      const result = await response.json() as {
+        features?: Array<{ properties?: Record<string, unknown> }>
+      }
+      const properties = result.features?.[0]?.properties
+      const addressParts = properties
+        ? [
+            properties.name,
+            [properties.housenumber, properties.street].filter((part) => typeof part === 'string').join(' '),
+            properties.postcode,
+            properties.city,
+            properties.state,
+            properties.country,
+          ].filter((part): part is string => typeof part === 'string' && part.length > 0)
+        : []
+      const uniqueParts = [...new Set(addressParts)]
+      setAddress(uniqueParts.join(', '))
+      setSuccessMessage(uniqueParts.length
+        ? 'Location selected and address filled in.'
+        : 'Location selected. No address was found; the map pin will be saved.')
+    } catch {
+      setAddress('')
+      setSuccessMessage('Location selected. Address lookup was unavailable; the map pin will be saved.')
+    }
+  }
+
   function useCurrentLocation() {
     setErrorMessage('')
     setSuccessMessage('')
 
     if (!navigator.geolocation) {
-      setErrorMessage('Location access is not supported by this browser. Enter the coordinates manually.')
+      setErrorMessage('Location access is not supported by this browser. Select the location on the map instead.')
       return
     }
 
     setLocating(true)
-    navigator.geolocation.getCurrentPosition(async ({ coords }) => {
-      setLatitude(String(coords.latitude))
-      setLongitude(String(coords.longitude))
-      try {
-        const query = new URLSearchParams({
-          lat: String(coords.latitude),
-          lon: String(coords.longitude),
-        })
-        const response = await fetch(`https://photon.komoot.io/reverse?${query}`)
-        if (!response.ok) throw new Error(`Address lookup failed (${response.status}).`)
-        const result = await response.json() as {
-          features?: Array<{ properties?: Record<string, unknown> }>
-        }
-        const properties = result.features?.[0]?.properties
-        const addressParts = properties
-          ? [
-              properties.name,
-              [properties.housenumber, properties.street].filter((part) => typeof part === 'string').join(' '),
-              properties.postcode,
-              properties.city,
-              properties.state,
-              properties.country,
-            ].filter((part): part is string => typeof part === 'string' && part.length > 0)
-          : []
-        const uniqueParts = [...new Set(addressParts)]
-        if (uniqueParts.length) {
-          setAddress(uniqueParts.join(', '))
-          setSuccessMessage('Location captured and address filled in.')
-        } else {
-          setAddress('')
-          setSuccessMessage('Location captured. No street address was found; the coordinates will be saved.')
-        }
-      } catch {
-        setAddress('')
-        setSuccessMessage('Location captured. Address lookup was unavailable; the coordinates will be saved.')
-      } finally {
-        setLocating(false)
-      }
+    navigator.geolocation.getCurrentPosition(({ coords }) => {
+      void setSelectedLocation(coords.latitude, coords.longitude).finally(() => setLocating(false))
     }, (error) => {
       const message = error.code === error.PERMISSION_DENIED
-        ? 'Location permission was denied. Allow location access in your browser settings or enter the coordinates manually.'
+        ? 'Location permission was denied. Allow it in your browser settings or select a location on the map.'
         : error.code === error.POSITION_UNAVAILABLE
-          ? 'Your location is unavailable right now. Try again or enter coordinates manually.'
-          : 'Could not get your location in time. Try again or enter coordinates manually.'
+          ? 'Your location is unavailable right now. Try again or select a location on the map.'
+          : 'Could not get your location in time. Try again or select a location on the map.'
       setErrorMessage(message)
       setLocating(false)
     }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 })
@@ -133,7 +143,7 @@ export default function AddChargerPage() {
           business_name: businessName.trim(),
           category,
           address: address.trim() || null,
-          location: { type: 'Point', coordinates: [lng, lat] },
+          location: `SRID=4326;POINT(${lng} ${lat})`,
         }).select('id').single()
         if (error || !data?.id) {
           setErrorMessage(error?.message ?? 'Provider profile was created without returning an ID.')
@@ -227,10 +237,33 @@ export default function AddChargerPage() {
                   {locating ? 'Getting location and address...' : 'Use my current location'}
                 </button>
                 <p className="mt-2 text-sm text-slate-600">
-                  Allow location access to save your coordinates and fill in the nearby address automatically.
+                  Use your current location or click anywhere on the map to place the charger pin.
                 </p>
+                <div className="mt-4 h-[360px] overflow-hidden rounded-2xl border border-slate-200">
+                  <Map
+                    {...mapViewState}
+                    mapStyle="https://tiles.openfreemap.org/styles/liberty"
+                    onClick={(event) => void setSelectedLocation(event.lngLat.lat, event.lngLat.lng)}
+                    onMove={(event) => setMapViewState({
+                      latitude: event.viewState.latitude,
+                      longitude: event.viewState.longitude,
+                      zoom: event.viewState.zoom,
+                    })}
+                    style={{ width: '100%', height: '100%' }}
+                  >
+                    <NavigationControl position="top-right" />
+                    {latitude && longitude && (
+                      <Marker anchor="bottom" latitude={Number(latitude)} longitude={Number(longitude)}>
+                        <div className="rounded-full bg-emerald-700 px-3 py-2 text-sm font-semibold text-white shadow-lg">
+                          Charger location
+                        </div>
+                      </Marker>
+                    )}
+                  </Map>
+                </div>
+                <p className="mt-2 text-sm text-slate-600">Click the map to place the pin. Drag the map to explore and zoom in for a precise location.</p>
                 {latitude && longitude && (
-                  <p className="mt-2 text-sm font-medium text-emerald-800">Location captured and ready to save.</p>
+                  <p className="mt-2 text-sm font-medium text-emerald-800">Map pin selected and ready to save.</p>
                 )}
               </div>
             </>}

@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../supabase'
 
 export default function RegisterPage() {
+  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const [accountType, setAccountType] = useState<'EV_OWNER' | 'PROVIDER'>(
     searchParams.get('type') === 'host' ? 'PROVIDER' : 'EV_OWNER',
@@ -36,7 +37,7 @@ export default function RegisterPage() {
       } else if (data.user && !data.session) {
         setSuccessMessage('Check your email to confirm your account.')
       } else if (data.user) {
-        setSuccessMessage('Your account has been created.')
+        navigate('/account-type', { replace: true })
       } else {
         setErrorMessage('Sign-up completed without returning a user. Please try again.')
       }

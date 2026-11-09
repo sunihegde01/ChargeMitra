@@ -31,13 +31,13 @@ export default function LandingPage() {
         </Link>
         <nav aria-label="Main navigation" className="flex items-center gap-3">
           <Link className="rounded-full px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-white" to="/login">
-            Log in
+            Sign in
           </Link>
           <Link
             className="rounded-full bg-emerald-700 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-800"
             to="/register"
           >
-            Get started
+            Create an account
           </Link>
         </nav>
       </header>
@@ -56,25 +56,20 @@ export default function LandingPage() {
             Find charging, understand the price, and get back on the road.
             ChargeMitra makes EV charging feel a little less complicated.
           </p>
-          <div className="mt-9 grid max-w-xl gap-3 sm:grid-cols-2">
+          <div className="mt-9 flex flex-wrap items-center gap-4">
             <Link
-              className="rounded-2xl bg-emerald-700 px-5 py-4 text-white shadow-lg shadow-emerald-900/10 transition hover:-translate-y-0.5 hover:bg-emerald-800"
-              to="/login?type=owner"
+              className="rounded-full bg-emerald-700 px-7 py-3.5 text-base font-semibold text-white shadow-lg shadow-emerald-900/10 transition hover:-translate-y-0.5 hover:bg-emerald-800"
+              to="/register"
             >
-              <span className="block font-semibold">I'm an EV user <span aria-hidden="true">→</span></span>
-              <span className="mt-1 block text-sm text-emerald-100">Find and book charging</span>
+              Create an account <span aria-hidden="true">→</span>
             </Link>
             <Link
-              className="rounded-2xl border border-slate-300 bg-white px-5 py-4 text-slate-900 transition hover:-translate-y-0.5 hover:border-emerald-600"
-              to="/login?type=host"
+              className="px-4 py-3 font-semibold text-slate-700 hover:text-emerald-800"
+              to="/login"
             >
-              <span className="block font-semibold">I'm a charging host <span aria-hidden="true">→</span></span>
-              <span className="mt-1 block text-sm text-slate-600">List and manage chargers</span>
+              Sign in
             </Link>
           </div>
-          <p className="mt-4 text-sm text-slate-600">
-            New to ChargeMitra? <Link className="font-semibold text-emerald-700 underline" to="/register">Create an account</Link>
-          </p>
           <div className="mt-12 flex items-center gap-4 border-t border-slate-200 pt-6">
             <div aria-hidden="true" className="flex -space-x-2">
               <span className="grid size-9 place-items-center rounded-full border-2 border-[#f7f9f6] bg-emerald-100 text-xs font-bold text-emerald-900">EV</span>

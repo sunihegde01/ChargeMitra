@@ -16,6 +16,7 @@ export default function ProviderDashboard() {
   const [sessionsByBooking, setSessionsByBooking] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [savingBookingId, setSavingBookingId] = useState('')
+  const [savingChargerId, setSavingChargerId] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
 
@@ -93,6 +94,32 @@ export default function ProviderDashboard() {
     setSavingBookingId('')
   }
 
+  async function toggleChargerStatus(charger: Charger) {
+    if (!provider) return
+    setSavingChargerId(charger.id)
+    setErrorMessage('')
+    setSuccessMessage('')
+    const { data, error } = await supabase
+      .from('chargers')
+      .update({ is_active: !charger.is_active })
+      .eq('id', charger.id)
+      .eq('provider_id', provider.id)
+      .select('id,is_active')
+      .maybeSingle()
+
+    if (error) {
+      setErrorMessage(`Could not update ${charger.name}: ${error.message}`)
+    } else if (!data) {
+      setErrorMessage(`Could not update ${charger.name}. Check that your database permissions are up to date.`)
+    } else {
+      setChargers((current) => current.map((item) =>
+        item.id === charger.id ? { ...item, is_active: data.is_active } : item,
+      ))
+      setSuccessMessage(`${charger.name} is now ${data.is_active ? 'active and visible to users' : 'inactive and hidden from users'}.`)
+    }
+    setSavingChargerId('')
+  }
+
   return (
     <main className="min-h-screen bg-[#f7f9f6] px-6 py-8 text-slate-900">
       <div className="mx-auto max-w-5xl">
@@ -141,7 +168,17 @@ export default function ProviderDashboard() {
                         <p className="font-semibold">{charger.name}</p>
                         <p className="mt-1 text-sm text-slate-600">{charger.charger_type} · {charger.rated_power_kw} kW · ₹{charger.price_per_kwh}/kWh</p>
                       </div>
-                      <span className={`text-sm font-medium ${charger.is_active ? 'text-emerald-700' : 'text-slate-500'}`}>{charger.is_active ? 'Active' : 'Inactive'}</span>
+                      <div className="flex items-center gap-3">
+                        <span className={`text-sm font-medium ${charger.is_active ? 'text-emerald-700' : 'text-slate-500'}`}>{charger.is_active ? 'Active' : 'Inactive'}</span>
+                        <button
+                          className="rounded-full border border-slate-300 px-3 py-2 text-sm font-semibold disabled:opacity-60"
+                          disabled={savingChargerId === charger.id}
+                          onClick={() => void toggleChargerStatus(charger)}
+                          type="button"
+                        >
+                          {savingChargerId === charger.id ? 'Saving...' : charger.is_active ? 'Deactivate' : 'Activate'}
+                        </button>
+                      </div>
                     </li>
                   ))}
                 </ul> : <p className="mt-4 text-slate-600">No chargers listed yet.</p>}

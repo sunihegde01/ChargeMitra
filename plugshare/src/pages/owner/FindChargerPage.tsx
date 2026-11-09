@@ -3,6 +3,7 @@ import type { FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { ChargerMap } from '../../components/ChargerMap'
 import { useAuth } from '../../context/AuthContext'
+import { parsePoint, type Point } from '../../location'
 import { supabase } from '../../supabase'
 
 type Provider = {
@@ -23,29 +24,7 @@ type Charger = {
 }
 
 type Vehicle = { id: string; brand: string; model: string }
-type Point = { lat: number; lng: number }
-
 const fieldClass = 'rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:border-emerald-700 focus:ring-2 focus:ring-emerald-700/15'
-
-function parsePoint(location: unknown): Point | null {
-  if (typeof location === 'string') {
-    const point = location.match(/POINT\s*\(\s*(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s*\)/i)
-    if (point) return { lng: Number(point[1]), lat: Number(point[2]) }
-    try {
-      return parsePoint(JSON.parse(location) as unknown)
-    } catch {
-      return null
-    }
-  }
-  if (typeof location === 'object' && location !== null && 'coordinates' in location) {
-    const coordinates = location.coordinates
-    if (Array.isArray(coordinates) && coordinates.length >= 2) {
-      const [lng, lat] = coordinates
-      if (typeof lat === 'number' && typeof lng === 'number') return { lat, lng }
-    }
-  }
-  return null
-}
 
 function distanceInKm(from: Point, to: Point): number {
   const radians = (degrees: number) => degrees * Math.PI / 180
@@ -67,6 +46,7 @@ export default function FindChargerPage() {
   const [searchCenter, setSearchCenter] = useState<Point>({ lat: 20.5937, lng: 78.9629 })
   const [userLocation, setUserLocation] = useState<Point | null>(null)
   const [locating, setLocating] = useState(false)
+  const [selectedChargerId, setSelectedChargerId] = useState('')
   const [vehicleId, setVehicleId] = useState('')
   const [startsAt, setStartsAt] = useState('')
   const [endsAt, setEndsAt] = useState('')
@@ -107,20 +87,28 @@ export default function FindChargerPage() {
       return [charger.name, charger.charger_type, charger.connector_type, provider?.business_name, provider?.address]
         .some((value) => value?.toLowerCase().includes(term))
     }) : chargers
-    return matchesSearch.flatMap((charger) => {
+    return matchesSearch.map((charger) => {
       const provider = providers.find((item) => item.id === charger.provider_id)
       const point = provider ? parsePoint(provider.location) : null
-      return point ? [{ charger, point, distance: distanceInKm(searchCenter, point) }] : []
-    }).sort((first, second) => first.distance - second.distance)
+      return { charger, point, distance: point ? distanceInKm(searchCenter, point) : null }
+    }).sort((first, second) => (first.distance ?? Number.POSITIVE_INFINITY) - (second.distance ?? Number.POSITIVE_INFINITY))
   }, [chargers, providers, search, searchCenter])
 
-  const pins = useMemo(() => visibleChargers.map(({ charger, point }) => ({
+  const mappedChargers = useMemo(() => visibleChargers.flatMap(({ charger, point, distance }) => point ? [{
+    charger,
+    point,
+    distance,
+  }] : []), [visibleChargers])
+  const nearbyChargers = useMemo(() => mappedChargers.slice(0, 10), [mappedChargers])
+  const pins = useMemo(() => nearbyChargers.map(({ charger, point }) => ({
       id: charger.id,
       lat: point.lat,
       lng: point.lng,
       name: charger.name,
       pricePerKwh: Number(charger.price_per_kwh),
-    })), [visibleChargers])
+    })), [nearbyChargers])
+  const nearestMappedChargerId = nearbyChargers[0]?.charger.id
+  const selectedCharger = nearbyChargers.find(({ charger }) => charger.id === selectedChargerId)
 
   async function searchAddress(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -227,6 +215,13 @@ export default function FindChargerPage() {
     setSavingId('')
   }
 
+  const selectedChargerDetails = selectedCharger
+    ? {
+        ...selectedCharger,
+        provider: providers.find((item) => item.id === selectedCharger.charger.provider_id),
+      }
+    : null
+
   return (
     <main className="min-h-screen bg-[#f7f9f6] px-6 py-8 text-slate-900">
       <div className="mx-auto max-w-6xl">
@@ -265,58 +260,70 @@ export default function FindChargerPage() {
         {successMessage && <p className="mt-5 rounded-xl bg-emerald-50 p-4 text-emerald-800" role="status">{successMessage}</p>}
 
         <section className="mt-6 overflow-hidden rounded-3xl border border-slate-200 bg-white p-2">
-          <ChargerMap chargers={pins} center={searchCenter} nearestChargerId={visibleChargers[0]?.charger.id} userLocation={userLocation} key={`${searchCenter.lat},${searchCenter.lng}`} />
+          <ChargerMap
+            chargers={pins}
+            center={searchCenter}
+            nearestChargerId={nearestMappedChargerId}
+            onChargerSelect={setSelectedChargerId}
+            selectedChargerId={selectedChargerId}
+            userLocation={userLocation}
+            key={`${searchCenter.lat},${searchCenter.lng}`}
+          />
         </section>
 
         <section className="mt-8">
           <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
             <div>
-              <h2 className="text-xl font-semibold">Nearest available charging points</h2>
-              <p className="mt-1 text-sm text-slate-600">The closest mapped station appears first. Time-slot conflicts are checked when you request a booking.</p>
+              <h2 className="text-xl font-semibold">Choose a charging point on the map</h2>
+              <p className="mt-1 text-sm text-slate-600">
+                Showing the {nearbyChargers.length === 1 ? 'nearest mapped charging point' : `nearest ${nearbyChargers.length} mapped charging points`}. Select a map pin to view its booking form.
+              </p>
             </div>
             {!vehicles.length && !loading && <Link className="text-sm font-semibold text-emerald-700 underline" to="/owner/dashboard">Add a vehicle to book</Link>}
           </div>
-          {loading ? <p className="text-slate-600">Loading stations...</p> : visibleChargers.length ? (
-            <div className="grid gap-4 lg:grid-cols-2">
-              {visibleChargers.map(({ charger, distance }, index) => {
-                const provider = providers.find((item) => item.id === charger.provider_id)
-                return (
-                  <article className={`rounded-3xl border bg-white p-6 ${index === 0 ? 'border-emerald-500 ring-2 ring-emerald-100' : 'border-slate-200'}`} key={charger.id}>
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        {index === 0 && <p className="text-xs font-bold uppercase tracking-wide text-emerald-700">Nearest charging point</p>}
-                        <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">{charger.charger_type} charger · {charger.rated_power_kw} kW</p>
-                        <h3 className="mt-2 text-xl font-semibold">{charger.name}</h3>
-                        <p className="mt-1 text-slate-600">{provider?.business_name ?? 'Charging provider'}{provider?.address ? ` · ${provider.address}` : ''}</p>
-                        <p className="mt-2 text-sm font-medium text-emerald-800">{distance.toFixed(1)} km away</p>
-                        <p className="mt-2 text-sm text-slate-600">Connector: {charger.connector_type}</p>
-                      </div>
-                      <p className="rounded-full bg-emerald-50 px-4 py-2 font-semibold text-emerald-800">₹{charger.price_per_kwh}/kWh</p>
-                    </div>
-                    <form className="mt-5 grid gap-3 border-t border-slate-100 pt-5 sm:grid-cols-2" onSubmit={(event) => void bookCharger(event, charger)}>
-                      <select aria-label="Select vehicle" className={fieldClass} onChange={(event) => setVehicleId(event.target.value)} required value={vehicleId}>
-                        <option value="">Select vehicle</option>
-                        {vehicles.map((vehicle) => <option key={vehicle.id} value={vehicle.id}>{vehicle.brand} {vehicle.model}</option>)}
-                      </select>
-                      <label className="grid gap-1 text-sm font-medium text-slate-700">
-                        Start date and time
-                        <span className="text-xs font-normal text-slate-500">When you want the charging session to begin.</span>
-                        <input aria-label="Start date and time" className={fieldClass} onChange={(event) => setStartsAt(event.target.value)} required type="datetime-local" value={startsAt} />
-                      </label>
-                      <label className="grid gap-1 text-sm font-medium text-slate-700">
-                        End date and time
-                        <span className="text-xs font-normal text-slate-500">When you expect the charging session to finish.</span>
-                        <input aria-label="End date and time" className={fieldClass} onChange={(event) => setEndsAt(event.target.value)} required type="datetime-local" value={endsAt} />
-                      </label>
-                      <button className="rounded-full bg-emerald-700 px-5 py-3 font-semibold text-white disabled:opacity-60" disabled={!vehicles.length || savingId === charger.id} type="submit">
-                        {savingId === charger.id ? 'Requesting...' : 'Request booking'}
-                      </button>
-                    </form>
-                  </article>
-                )
-              })}
-            </div>
-          ) : <p className="rounded-2xl bg-white p-6 text-slate-600" role="status">{search ? 'No charger found matching your search near this location.' : 'No charger found near this location.'}</p>}
+          {loading ? <p className="text-slate-600">Loading stations...</p> : !nearbyChargers.length ? (
+            <p className="rounded-2xl bg-white p-6 text-slate-600" role="status">
+              {search ? 'No mapped charging points match your filter.' : chargers.length ? 'No active charging points have a map location yet.' : 'No active chargers found.'}
+            </p>
+          ) : selectedChargerDetails ? (
+            <article className="rounded-3xl border border-emerald-500 bg-white p-6 ring-2 ring-emerald-100">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  {selectedChargerDetails.charger.id === nearestMappedChargerId && <p className="text-xs font-bold uppercase tracking-wide text-emerald-700">Nearest charging point</p>}
+                  <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">{selectedChargerDetails.charger.charger_type} charger · {selectedChargerDetails.charger.rated_power_kw} kW</p>
+                  <h3 className="mt-2 text-xl font-semibold">{selectedChargerDetails.charger.name}</h3>
+                  <p className="mt-1 text-slate-600">{selectedChargerDetails.provider?.business_name ?? 'Charging provider'}{selectedChargerDetails.provider?.address ? ` · ${selectedChargerDetails.provider.address}` : ''}</p>
+                  <p className="mt-2 text-sm font-medium text-emerald-800">{selectedChargerDetails.distance?.toFixed(1)} km away</p>
+                  <p className="mt-2 text-sm text-slate-600">Connector: {selectedChargerDetails.charger.connector_type}</p>
+                </div>
+                <p className="rounded-full bg-emerald-50 px-4 py-2 font-semibold text-emerald-800">₹{selectedChargerDetails.charger.price_per_kwh}/kWh</p>
+              </div>
+              <button className="mt-4 text-sm font-semibold text-emerald-700 underline" onClick={() => setSelectedChargerId('')} type="button">Choose a different map pin</button>
+              <form className="mt-5 grid gap-3 border-t border-slate-100 pt-5 sm:grid-cols-2" onSubmit={(event) => void bookCharger(event, selectedChargerDetails.charger)}>
+                <select aria-label="Select vehicle" className={fieldClass} onChange={(event) => setVehicleId(event.target.value)} required value={vehicleId}>
+                  <option value="">Select vehicle</option>
+                  {vehicles.map((vehicle) => <option key={vehicle.id} value={vehicle.id}>{vehicle.brand} {vehicle.model}</option>)}
+                </select>
+                <label className="grid gap-1 text-sm font-medium text-slate-700">
+                  Start date and time
+                  <span className="text-xs font-normal text-slate-500">When you want the charging session to begin.</span>
+                  <input aria-label="Start date and time" className={fieldClass} onChange={(event) => setStartsAt(event.target.value)} required type="datetime-local" value={startsAt} />
+                </label>
+                <label className="grid gap-1 text-sm font-medium text-slate-700">
+                  End date and time
+                  <span className="text-xs font-normal text-slate-500">When you expect the charging session to finish.</span>
+                  <input aria-label="End date and time" className={fieldClass} onChange={(event) => setEndsAt(event.target.value)} required type="datetime-local" value={endsAt} />
+                </label>
+                <button className="rounded-full bg-emerald-700 px-5 py-3 font-semibold text-white disabled:opacity-60" disabled={!vehicles.length || savingId === selectedChargerDetails.charger.id} type="submit">
+                  {savingId === selectedChargerDetails.charger.id ? 'Requesting...' : 'Request booking'}
+                </button>
+              </form>
+            </article>
+          ) : (
+            <p className="rounded-2xl bg-white p-6 text-slate-600" role="status">
+              Select a charging-point pin on the map to see its details and request a booking.
+            </p>
+          )}
         </section>
       </div>
     </main>

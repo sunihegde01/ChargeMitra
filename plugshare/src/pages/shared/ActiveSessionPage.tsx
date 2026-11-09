@@ -3,29 +3,8 @@ import type { FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { ChargerDirections } from '../../components/ChargerDirections'
 import { useAuth } from '../../context/AuthContext'
+import { parsePoint, type Point } from '../../location'
 import { supabase } from '../../supabase'
-
-type Point = { lat: number; lng: number }
-
-function parsePoint(location: unknown): Point | null {
-  if (typeof location === 'string') {
-    const point = location.match(/POINT\s*\(\s*(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s*\)/i)
-    if (point) return { lng: Number(point[1]), lat: Number(point[2]) }
-    try {
-      return parsePoint(JSON.parse(location) as unknown)
-    } catch {
-      return null
-    }
-  }
-  if (typeof location === 'object' && location !== null && 'coordinates' in location) {
-    const coordinates = location.coordinates
-    if (Array.isArray(coordinates) && coordinates.length >= 2) {
-      const [lng, lat] = coordinates
-      if (typeof lat === 'number' && typeof lng === 'number') return { lat, lng }
-    }
-  }
-  return null
-}
 
 type Session = {
   id: string

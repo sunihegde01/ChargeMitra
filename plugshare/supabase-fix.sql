@@ -42,6 +42,28 @@ select
 from auth.users
 on conflict (id) do nothing;
 
+drop policy if exists "Providers update own charger availability" on public.chargers;
+create policy "Providers update own charger availability"
+  on public.chargers
+  for update
+  using (
+    exists (
+      select 1
+      from public.providers p
+      where p.id = provider_id and p.profile_id = auth.uid()
+    )
+  )
+  with check (
+    exists (
+      select 1
+      from public.providers p
+      where p.id = provider_id and p.profile_id = auth.uid()
+    )
+  );
+
+revoke update on public.chargers from authenticated;
+grant update (is_active) on public.chargers to authenticated;
+
 alter table public.bookings
   drop constraint if exists no_overlap;
 

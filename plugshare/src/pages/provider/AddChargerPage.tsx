@@ -4,35 +4,15 @@ import { Link, useNavigate } from 'react-router-dom'
 import Map, { Marker, NavigationControl } from 'react-map-gl/maplibre'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { MAP_STYLE } from '../../mapStyle'
+import { parsePoint } from '../../location'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../supabase'
 
-type Point = { latitude: number; longitude: number }
 type Provider = { id: string; business_name: string; category: string; address: string | null }
 
 const fieldClass = 'w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:border-emerald-700 focus:ring-2 focus:ring-emerald-700/15'
 const categories = ['HOME', 'APARTMENT', 'OFFICE', 'COMMERCIAL', 'OTHER']
 const defaultMapView = { latitude: 20.5937, longitude: 78.9629, zoom: 4 }
-
-function parsePoint(location: unknown): Point | null {
-  if (typeof location === 'string') {
-    const point = location.match(/POINT\s*\(\s*(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s*\)/i)
-    if (point) return { longitude: Number(point[1]), latitude: Number(point[2]) }
-    try {
-      return parsePoint(JSON.parse(location) as unknown)
-    } catch {
-      return null
-    }
-  }
-  if (typeof location === 'object' && location !== null && 'coordinates' in location) {
-    const coordinates = location.coordinates
-    if (Array.isArray(coordinates) && coordinates.length >= 2) {
-      const [longitude, latitude] = coordinates
-      if (typeof latitude === 'number' && typeof longitude === 'number') return { latitude, longitude }
-    }
-  }
-  return null
-}
 
 export default function AddChargerPage() {
   const { user } = useAuth()
@@ -75,9 +55,9 @@ export default function AddChargerPage() {
         setAddress(data.address ?? '')
         const point = parsePoint(data.location)
         if (point) {
-          setLatitude(String(point.latitude))
-          setLongitude(String(point.longitude))
-          setMapViewState({ ...point, zoom: 15 })
+          setLatitude(String(point.lat))
+          setLongitude(String(point.lng))
+          setMapViewState({ latitude: point.lat, longitude: point.lng, zoom: 15 })
         }
       }
       setInitializing(false)
@@ -240,6 +220,7 @@ export default function AddChargerPage() {
         connector_type: connector.trim(),
         price_per_kwh: Number(price),
         has_dedicated_meter: hasMeter,
+        is_active: true,
       })
       if (error) {
         setErrorMessage(`Provider profile is saved, but the charger could not be added: ${error.message}`)

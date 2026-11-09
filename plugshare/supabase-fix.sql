@@ -19,6 +19,7 @@ alter table public.charging_sessions
   add column if not exists final_amount numeric(12, 2),
   add column if not exists active_duration_seconds numeric(12, 2),
   add column if not exists paused_at timestamptz;
+notify pgrst, 'reload schema';
 
 create table if not exists public.charging_session_events (
   id bigint generated always as identity primary key,

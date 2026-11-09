@@ -30,6 +30,9 @@ export default function LandingPage() {
           <span className="text-xl font-bold tracking-tight">ChargeMitra</span>
         </Link>
         <nav aria-label="Main navigation" className="flex items-center gap-3">
+          <Link className="hidden rounded-full px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-white sm:inline-flex" to="/support">
+            Help & support
+          </Link>
           <Link className="rounded-full px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-white" to="/login">
             Sign in
           </Link>
@@ -151,7 +154,10 @@ export default function LandingPage() {
 
       <footer className="mx-auto flex max-w-7xl flex-col gap-3 px-6 py-7 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between lg:px-10">
         <p>© {currentYear} ChargeMitra</p>
-        <p>Helping every EV journey find its next charge.</p>
+        <div className="flex flex-wrap items-center gap-4">
+          <p>Helping every EV journey find its next charge.</p>
+          <Link className="font-semibold text-emerald-700 hover:underline" to="/support">Help & support</Link>
+        </div>
       </footer>
     </main>
   )

@@ -5,6 +5,7 @@ alter table public.bookings
   add column if not exists estimated_total_max_snapshot numeric(12, 2),
   add column if not exists calculation_method text,
   add column if not exists provider_method_approved_at timestamptz;
+notify pgrst, 'reload schema';
 
 alter table public.chargers
   add column if not exists site_power_limit_kw numeric(8, 2);

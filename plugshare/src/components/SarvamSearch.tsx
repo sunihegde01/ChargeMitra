@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { FunctionsHttpError } from '@supabase/supabase-js'
 import { supabase } from '../supabase'
 
 export type ChargerSearchFilters = {
@@ -27,6 +28,19 @@ const sampleRate = 16_000
 
 function joinTranscript(first: string, second: string): string {
   return [first.trim(), second.trim()].filter(Boolean).join(' ').replace(/\s+/g, ' ')
+}
+
+async function getFunctionErrorMessage(error: unknown): Promise<string> {
+  if (error instanceof FunctionsHttpError && error.context instanceof Response) {
+    try {
+      const body = await error.context.clone().json() as { error?: unknown; message?: unknown }
+      if (typeof body.error === 'string') return body.error
+      if (typeof body.message === 'string') return body.message
+    } catch {
+      return error.message
+    }
+  }
+  return error instanceof Error ? error.message : 'Could not interpret the charger search.'
 }
 
 function audioToBase64(audio: Float32Array, inputSampleRate: number): string {
@@ -111,7 +125,7 @@ export function SarvamSearch({ onApply }: Props) {
         'sarvam-assistant',
         { body: { query: trimmed } },
       )
-      if (error) throw new Error(error.message)
+      if (error) throw new Error(await getFunctionErrorMessage(error))
       const parsed = data?.filters
       if (!parsed || typeof parsed !== 'object') throw new Error('Sarvam returned invalid search filters.')
       const normalized: ChargerSearchFilters = {

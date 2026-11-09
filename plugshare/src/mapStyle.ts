@@ -3,18 +3,18 @@ import type { StyleSpecification } from 'maplibre-gl'
 export const MAP_STYLE = {
   version: 8,
   sources: {
-    carto: {
+    openstreetmap: {
       type: 'raster',
-      tiles: ['https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png'],
+      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
       tileSize: 256,
-      attribution: '© OpenStreetMap contributors © CARTO',
+      attribution: '© OpenStreetMap contributors',
     },
   },
   layers: [
     {
-      id: 'carto-base',
+      id: 'openstreetmap-base',
       type: 'raster',
-      source: 'carto',
+      source: 'openstreetmap',
     },
   ],
 } satisfies StyleSpecification

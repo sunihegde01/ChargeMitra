@@ -1,10 +1,24 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
+import { FunctionsHttpError } from '@supabase/supabase-js'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../supabase'
 
 type Message = { role: 'user' | 'assistant'; content: string }
+
+async function getFunctionErrorMessage(error: unknown): Promise<string> {
+  if (error instanceof FunctionsHttpError && error.context instanceof Response) {
+    try {
+      const body = await error.context.json() as { error?: unknown; message?: unknown }
+      if (typeof body.error === 'string') return body.error
+      if (typeof body.message === 'string') return body.message
+    } catch {
+      return error.message
+    }
+  }
+  return error instanceof Error ? error.message : 'Support chat is unavailable right now.'
+}
 
 const commonQuestions = [
   {
@@ -43,7 +57,7 @@ export default function SupportPage() {
         body: { messages: nextMessages.slice(-10) },
         headers: { 'x-sarvam-action': 'support-chat' },
       })
-      if (error) throw new Error(error.message)
+      if (error) throw new Error(await getFunctionErrorMessage(error))
       if (!data?.answer?.trim()) throw new Error('The support assistant returned an empty reply.')
       setMessages([...nextMessages, { role: 'assistant', content: data.answer }])
     } catch (error) {

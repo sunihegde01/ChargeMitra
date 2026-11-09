@@ -41,6 +41,29 @@ type Booking = {
 }
 type Charger = { name: string; charger_type: string; rated_power_kw: number; connector_type: string }
 
+async function getFunctionErrorMessage(error: unknown): Promise<string> {
+  if (error && typeof error === 'object' && 'context' in error) {
+    const context = error.context
+    if (!(context instanceof Response)) {
+      return error instanceof Error ? error.message : 'Could not play the bill explanation.'
+    }
+    try {
+      const body = await context.clone().json() as { error?: unknown; message?: unknown }
+      if (typeof body.error === 'string') return body.error
+      if (typeof body.message === 'string') return body.message
+    } catch {
+      try {
+        const responseText = await context.clone().text()
+        if (responseText) return `Voice playback failed (${context.status}): ${responseText.slice(0, 300)}`
+      } catch {
+        return error instanceof Error ? error.message : 'Could not play the bill explanation.'
+      }
+    }
+    return `Voice playback failed (HTTP ${context.status}). ${error instanceof Error ? error.message : ''}`.trim()
+  }
+  return error instanceof Error ? error.message : 'Could not play the bill explanation.'
+}
+
 function formatDuration(seconds: number): string {
   const totalMinutes = Math.floor(seconds / 60)
   const hours = Math.floor(totalMinutes / 60)
@@ -224,7 +247,7 @@ export default function ActiveSessionPage() {
         },
         headers: { 'x-sarvam-action': 'explain-bill' },
       })
-      if (error) throw new Error(error.message)
+      if (error) throw new Error(await getFunctionErrorMessage(error))
       if (!data?.explanation?.trim()) throw new Error('Sarvam returned an empty bill explanation.')
       setBillExplanation(data.explanation)
     } catch (error) {
@@ -243,13 +266,42 @@ export default function ActiveSessionPage() {
     setSpeechLoading(true)
     setBillError('')
     try {
-      const { data, error } = await supabase.functions.invoke<{ audio: string }>('sarvam-assistant', {
-        body: { text: billExplanation, language: billLanguage },
-        headers: { 'x-sarvam-action': 'speak' },
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+      if (sessionError) throw new Error(sessionError.message)
+      const accessToken = sessionData.session?.access_token
+      if (!accessToken) throw new Error('Your session expired. Sign in again to play the bill explanation.')
+
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sarvam-assistant`, {
+        method: 'POST',
+        headers: {
+          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          'x-sarvam-action': 'speak',
+        },
+        body: JSON.stringify({ text: billExplanation, language: billLanguage }),
       })
-      if (error) throw new Error(error.message)
-      if (!data?.audio) throw new Error('Sarvam returned no speech audio.')
-      const bytes = Uint8Array.from(atob(data.audio), (character) => character.charCodeAt(0))
+      const responseText = await response.text()
+      let result: { audio?: unknown; error?: unknown; message?: unknown }
+      try {
+        result = JSON.parse(responseText) as { audio?: unknown; error?: unknown; message?: unknown }
+      } catch {
+        throw new Error(response.ok
+          ? 'The voice service returned an unreadable response.'
+          : `Voice generation failed (HTTP ${response.status}): ${responseText.slice(0, 300)}`)
+      }
+      if (!response.ok) {
+        const detail = typeof result.error === 'string'
+          ? result.error
+          : typeof result.message === 'string'
+            ? result.message
+            : `Voice generation failed (HTTP ${response.status}).`
+        throw new Error(detail)
+      }
+      if (typeof result.audio !== 'string' || !result.audio) {
+        throw new Error('Sarvam returned no speech audio.')
+      }
+      const bytes = Uint8Array.from(atob(result.audio), (character) => character.charCodeAt(0))
       const nextUrl = URL.createObjectURL(new Blob([bytes], { type: 'audio/wav' }))
       setBillAudioUrl(nextUrl)
       window.setTimeout(() => void billAudioRef.current?.play(), 0)

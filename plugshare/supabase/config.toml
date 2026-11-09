@@ -1,2 +1,2 @@
 [functions.sarvam-assistant]
-verify_jwt = true
+verify_jwt = false

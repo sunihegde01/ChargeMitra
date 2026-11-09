@@ -22,6 +22,111 @@ async function authenticate(request: Request): Promise<boolean> {
   return response.ok
 }
 
+async function authenticateToken(token: string): Promise<boolean> {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')
+  const anonKey = Deno.env.get('SUPABASE_ANON_KEY')
+  if (!supabaseUrl || !anonKey) return false
+  const response = await fetch(`${supabaseUrl}/auth/v1/user`, {
+    headers: { apikey: anonKey, authorization: `Bearer ${token}` },
+  })
+  return response.ok
+}
+
+async function handleLiveTranscription(request: Request): Promise<Response> {
+  const url = new URL(request.url)
+  const token = url.searchParams.get('jwt')
+  const suppliedAnonKey = url.searchParams.get('apikey')
+  const anonKey = Deno.env.get('SUPABASE_ANON_KEY')
+  const apiKey = Deno.env.get('SARVAM_API_KEY')
+  if (!token || !suppliedAnonKey || suppliedAnonKey !== anonKey) {
+    return jsonResponse({ error: 'A valid signed-in session is required for live transcription.' }, 401)
+  }
+  if (!apiKey) return jsonResponse({ error: 'Sarvam AI is not configured. Set SARVAM_API_KEY for the Edge Function.' }, 503)
+  try {
+    if (!await authenticateToken(token)) {
+      return jsonResponse({ error: 'Your session expired. Sign in again to use live voice search.' }, 401)
+    }
+  } catch {
+    return jsonResponse({ error: 'Could not verify the signed-in session.' }, 502)
+  }
+
+  const { socket: client, response } = Deno.upgradeWebSocket(request)
+  const upstreamUrl = new URL('wss://api.sarvam.ai/speech-to-text-realtime/ws')
+  upstreamUrl.searchParams.set('language_code', 'auto')
+  upstreamUrl.searchParams.set('model', 'saaras:v4')
+  upstreamUrl.searchParams.set('stream_type', 'fast')
+  upstreamUrl.searchParams.set('encoding', 'linear16')
+  upstreamUrl.searchParams.set('sample_rate', '16000')
+  upstreamUrl.searchParams.set('endpointing', 'vad')
+  upstreamUrl.searchParams.set('keyterms', JSON.stringify(['EV charging', 'charger', 'Type 2', 'CCS2']))
+
+  const upstream = new WebSocket(upstreamUrl, [`api-subscription-key.${apiKey}`])
+  const queuedMessages: string[] = []
+  let upstreamReady = false
+  let keepalive: number | undefined
+  let resolveLifetime: (() => void) | undefined
+  const lifetime = new Promise<void>((resolve) => {
+    resolveLifetime = resolve
+  })
+  EdgeRuntime.waitUntil(lifetime)
+
+  function finish() {
+    if (keepalive !== undefined) clearInterval(keepalive)
+    if (upstream.readyState < WebSocket.CLOSING) upstream.close()
+    if (client.readyState < WebSocket.CLOSING) client.close()
+    resolveLifetime?.()
+  }
+
+  client.onopen = () => {
+    keepalive = setInterval(() => {
+      if (upstream.readyState === WebSocket.OPEN) upstream.send(JSON.stringify({ event: 'ping' }))
+    }, 20_000)
+  }
+  client.onmessage = (event) => {
+    if (typeof event.data !== 'string') return
+    if (upstreamReady && upstream.readyState === WebSocket.OPEN) upstream.send(event.data)
+    else queuedMessages.push(event.data)
+  }
+  client.onerror = finish
+  client.onclose = finish
+
+  upstream.onopen = () => {
+    upstreamReady = true
+    if (client.readyState === WebSocket.OPEN) client.send(JSON.stringify({ event: 'relay.ready' }))
+    for (const message of queuedMessages.splice(0)) upstream.send(message)
+  }
+  upstream.onmessage = (event) => {
+    if (client.readyState === WebSocket.OPEN) client.send(event.data)
+  }
+  upstream.onerror = () => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(JSON.stringify({
+        event: 'error',
+        code: 'upstream_connection_failed',
+        is_fatal: true,
+        message: 'Could not connect to Sarvam live transcription.',
+      }))
+    }
+    finish()
+  }
+  upstream.onclose = (event) => {
+    if (client.readyState === WebSocket.OPEN) {
+      if (event.code !== 1000 && event.code !== 1005) {
+        client.send(JSON.stringify({
+          event: 'error',
+          code: String(event.code),
+          is_fatal: true,
+          message: event.reason || 'Sarvam live transcription closed unexpectedly.',
+        }))
+      }
+      client.close(event.code === 1000 || event.code === 1005 ? 1000 : 1011, event.reason)
+    }
+    finish()
+  }
+
+  return response
+}
+
 async function callSarvam(path: string, body: unknown): Promise<Response> {
   const apiKey = Deno.env.get('SARVAM_API_KEY')
   if (!apiKey) throw new Error('Sarvam AI is not configured. Set SARVAM_API_KEY for the Edge Function.')
@@ -32,21 +137,67 @@ async function callSarvam(path: string, body: unknown): Promise<Response> {
   })
 }
 
-async function chat(messages: Array<{ role: string; content: string }>, maxTokens = 500): Promise<string> {
+async function chat(
+  messages: Array<{ role: string; content: string }>,
+  maxTokens = 500,
+  model = 'sarvam-105b',
+): Promise<string> {
   const response = await callSarvam('/v1/chat/completions', {
-    model: 'sarvam-105b',
+    model,
     messages,
     max_tokens: maxTokens,
     temperature: 0.2,
+    reasoning_effort: 'low',
   })
-  if (!response.ok) throw new Error(`Sarvam chat request failed (${response.status}).`)
-  const result = await response.json() as { choices?: Array<{ message?: { content?: unknown } }> }
-  const content = result.choices?.[0]?.message?.content
-  if (typeof content !== 'string' || !content.trim()) throw new Error('Sarvam returned an empty chat response.')
+  if (!response.ok) {
+    let detail = ''
+    try {
+      const body = await response.json() as { message?: unknown; error?: { message?: unknown; code?: unknown } | string }
+      const error = body.error
+      const message = typeof error === 'object' && error !== null ? error.message : error
+      const code = typeof error === 'object' && error !== null ? error.code : undefined
+      detail = [typeof message === 'string' ? message : body.message, typeof code === 'string' ? code : null]
+        .filter((value): value is string => typeof value === 'string')
+        .join(' ')
+    } catch {
+      detail = ''
+    }
+    throw new Error(`Sarvam chat request failed (${response.status})${detail ? `: ${detail}` : '. Check the Sarvam API key and model access.'}`)
+  }
+  const result = await response.json() as {
+    choices?: Array<{
+      finish_reason?: string
+      message?: { content?: unknown; tool_calls?: unknown }
+    }>
+    usage?: { completion_tokens_details?: { reasoning_tokens?: number } }
+  }
+  const choice = result.choices?.[0]
+  const content = choice?.message?.content
+  if (typeof content !== 'string' || !content.trim()) {
+    const reason = choice?.finish_reason === 'length'
+      ? 'The response reached its output limit. Please shorten the request and try again.'
+      : choice?.message?.tool_calls
+        ? 'Sarvam returned a tool call instead of a text reply.'
+        : 'Sarvam produced no reply text. Please try again.'
+    throw new Error(reason)
+  }
   return content.trim()
 }
 
 Deno.serve(async (request) => {
+  if (request.headers.get('upgrade')?.toLowerCase() === 'websocket') {
+    const url = new URL(request.url)
+    if (url.searchParams.get('action') !== 'live-transcribe') {
+      return jsonResponse({ error: 'Unknown WebSocket action.' }, 400)
+    }
+    try {
+      return await handleLiveTranscription(request)
+    } catch (error) {
+      return jsonResponse({
+        error: error instanceof Error ? error.message : 'Could not start live transcription.',
+      }, 502)
+    }
+  }
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   if (request.method !== 'POST') return jsonResponse({ error: 'Method not allowed.' }, 405)
 
@@ -155,14 +306,31 @@ Deno.serve(async (request) => {
       return jsonResponse({ error: 'Text or language is invalid for speech playback.' }, 400)
     }
     try {
+      const speakers: Record<string, string> = { en: 'shubh', hi: 'shubh', kn: 'gokul' }
       const response = await callSarvam('/text-to-speech', {
         text: body.text.trim(),
         model: 'bulbul:v3',
         language_code: languageCodes[body.language],
-        speaker: 'shubh',
+        speaker: speakers[body.language],
         output_audio_codec: 'wav',
       })
-      if (!response.ok) return jsonResponse({ error: `Sarvam speech generation failed (${response.status}).` }, 502)
+      if (!response.ok) {
+        let detail = ''
+        try {
+          const errorBody = await response.json() as { error?: { message?: unknown; code?: unknown } | string; message?: unknown }
+          const apiError = errorBody.error
+          const message = typeof apiError === 'object' && apiError !== null ? apiError.message : apiError
+          const code = typeof apiError === 'object' && apiError !== null ? apiError.code : undefined
+          detail = [typeof message === 'string' ? message : errorBody.message, typeof code === 'string' ? code : null]
+            .filter((value): value is string => typeof value === 'string')
+            .join(' ')
+        } catch {
+          detail = ''
+        }
+        return jsonResponse({
+          error: `Sarvam speech generation failed (${response.status})${detail ? `: ${detail}` : '. Please check the selected language and try again.'}`,
+        }, 502)
+      }
       const result = await response.json() as { audios?: unknown }
       const audio = Array.isArray(result.audios) ? result.audios[0] : null
       if (typeof audio !== 'string') return jsonResponse({ error: 'Sarvam returned invalid speech audio.' }, 502)
@@ -197,10 +365,10 @@ Deno.serve(async (request) => {
       const answer = await chat([
         {
           role: 'system',
-          content: `You are ChargeMitra Help, a support assistant for an EV charger-sharing platform. Only answer questions about ChargeMitra charger discovery, booking requests and scheduling, provider approval, charging sessions, actual meter-based vs estimated time-based bills, and pay-at-station cash/UPI payments. Use this product information: users can find chargers on the map, compare per-kWh rates, and request a booking; providers accept or decline requests and choose a charging calculation method; owners confirm the method before charging; meter-based bills use meter readings, while time-based bills are estimates based on active charging time; current payment option is pay at station (cash/UPI). Do not invent refunds, fees, policies, integrations, booking guarantees, or account actions. If the question is outside ChargeMitra or the supplied product information, politely say you can only help with ChargeMitra and recommend contacting the platform team for account-specific support. Reply in the language and script used by the user. Be concise and clear.`,
+          content: `You are ChargeMitra Help, a support assistant for an EV charger-sharing platform. Only answer questions about ChargeMitra charger discovery, booking requests and scheduling, provider approval, charging sessions, actual meter-based vs estimated time-based bills, and pay-at-station cash/UPI payments. Use this product information: users can find chargers on the map, compare per-kWh rates, and request a booking; providers accept or decline requests and choose a charging calculation method; owners confirm the method before charging; meter-based bills use meter readings, while time-based bills are estimates based on active charging time; current payment option is pay at station (cash/UPI). Do not invent refunds, fees, policies, integrations, booking guarantees, or account actions. If the question is outside ChargeMitra or the supplied product information, politely say you can only help with ChargeMitra and recommend contacting the platform team for account-specific support. Reply in the language and script used by the user. If the user explicitly requests a different supported language, follow that request. Be concise and clear.`,
         },
         ...messages,
-      ], 450)
+      ], 1200, 'sarvam-105b-conversations')
       return jsonResponse({ answer })
     } catch (error) {
       return jsonResponse({ error: error instanceof Error ? error.message : 'Support chat is temporarily unavailable.' }, 502)

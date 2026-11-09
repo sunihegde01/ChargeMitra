@@ -39,14 +39,14 @@ All Sarvam requests run in the authenticated `sarvam-assistant` Supabase Edge Fu
 supabase login
 supabase link --project-ref <your-project-ref>
 supabase secrets set SARVAM_API_KEY=<your-sarvam-api-key>
-supabase functions deploy sarvam-assistant
+supabase functions deploy sarvam-assistant --no-verify-jwt
 ```
 
-The existing frontend also requires `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in its local environment. Voice features require browser microphone permission and localhost or HTTPS.
+The function disables gateway JWT verification so the browser can establish its live-transcription WebSocket. The function itself validates the signed-in user's access token for both WebSocket and HTTP requests. Do not remove that in-function authentication. The existing frontend also requires `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in its local environment. Voice features require browser microphone permission and localhost or HTTPS.
 
 ### Test the implemented features
 
-1. **Voice/text charger search:** Sign in and open **Find a charger**. Type or speak a request in English, Kannada, or Hindi; inspect/edit the detected filters and confirm connector, minimum power, location, and maximum price narrow the list. A detected date/time pre-fills the booking time; the database checks the actual slot conflict when a booking is sent. The current project has no separate Quick Search page.
+1. **Voice/text charger search:** Deploy the updated function, sign in, and open **Find a charger**. Speak in English, Kannada, or Hindi and confirm the transcript appears while speaking; stop to parse it. Type a request as an alternative. Inspect/edit the detected filters and confirm connector, minimum power, location, and maximum price narrow the list. A detected date/time pre-fills the booking time; the database checks the actual slot conflict when a booking is sent. The current project has no separate Quick Search page.
 2. **Bill explanation and audio:** Open a completed charging session as its owner. Select English, Kannada, or Hindi, choose **Explain this bill**, then **Listen**. The project does not currently store a platform fee, so the explanation says it is not provided rather than assuming an amount.
 3. **Dispute summary:** Skipped by request. There is no dispute page/table or admin-role model in this project.
 4. **Help chatbot:** Sign in and choose **Help & support** from the home page. Ask about booking, billing, or payment in English, Kannada, or Hindi; out-of-scope topics should be redirected to ChargeMitra support.

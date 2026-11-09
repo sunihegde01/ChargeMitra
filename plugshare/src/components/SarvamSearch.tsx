@@ -14,23 +14,91 @@ type Props = {
   onApply: (query: string, filters: ChargerSearchFilters) => void
 }
 
+type RealtimeEvent = {
+  event?: string
+  text?: string
+  message?: string
+  code?: string
+  is_fatal?: boolean
+}
+
 const inputClass = 'min-w-0 rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-700 focus:ring-2 focus:ring-emerald-700/15'
+const sampleRate = 16_000
+
+function joinTranscript(first: string, second: string): string {
+  return [first.trim(), second.trim()].filter(Boolean).join(' ').replace(/\s+/g, ' ')
+}
+
+function audioToBase64(audio: Float32Array, inputSampleRate: number): string {
+  const ratio = inputSampleRate / sampleRate
+  const outputLength = Math.floor(audio.length / ratio)
+  const bytes = new Uint8Array(outputLength * 2)
+  const view = new DataView(bytes.buffer)
+
+  for (let outputIndex = 0; outputIndex < outputLength; outputIndex += 1) {
+    const start = Math.floor(outputIndex * ratio)
+    const end = Math.min(Math.floor((outputIndex + 1) * ratio), audio.length)
+    let total = 0
+    for (let inputIndex = start; inputIndex < end; inputIndex += 1) total += audio[inputIndex]
+    const average = total / Math.max(end - start, 1)
+    const sample = Math.max(-1, Math.min(1, average))
+    view.setInt16(outputIndex * 2, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true)
+  }
+
+  let binary = ''
+  for (const byte of bytes) binary += String.fromCharCode(byte)
+  return btoa(binary)
+}
 
 export function SarvamSearch({ onApply }: Props) {
   const [query, setQuery] = useState('')
   const [filters, setFilters] = useState<ChargerSearchFilters | null>(null)
   const [recording, setRecording] = useState(false)
+  const [finishingRecording, setFinishingRecording] = useState(false)
   const [busy, setBusy] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
-  const recorderRef = useRef<MediaRecorder | null>(null)
+  const socketRef = useRef<WebSocket | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
-  const chunksRef = useRef<Blob[]>([])
-  const timeoutRef = useRef<number | null>(null)
+  const audioContextRef = useRef<AudioContext | null>(null)
+  const processorRef = useRef<ScriptProcessorNode | null>(null)
+  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
+  const finalizedTranscriptRef = useRef('')
+  const partialTranscriptRef = useRef('')
+  const shouldSearchOnEndRef = useRef(false)
+  const capturingRef = useRef(false)
+  const limitTimerRef = useRef<number | null>(null)
+
+  function stopAudioCapture() {
+    capturingRef.current = false
+    if (limitTimerRef.current !== null) window.clearTimeout(limitTimerRef.current)
+    limitTimerRef.current = null
+    if (processorRef.current) processorRef.current.onaudioprocess = null
+    processorRef.current?.disconnect()
+    sourceRef.current?.disconnect()
+    processorRef.current = null
+    sourceRef.current = null
+    streamRef.current?.getTracks().forEach((track) => track.stop())
+    streamRef.current = null
+    void audioContextRef.current?.close()
+    audioContextRef.current = null
+  }
+
+  function closeLiveTranscription() {
+    stopAudioCapture()
+    const socket = socketRef.current
+    socketRef.current = null
+    if (socket && socket.readyState < WebSocket.CLOSING) socket.close()
+    setRecording(false)
+    setFinishingRecording(false)
+  }
 
   useEffect(() => () => {
-    if (timeoutRef.current !== null) window.clearTimeout(timeoutRef.current)
-    if (recorderRef.current?.state === 'recording') recorderRef.current.stop()
-    streamRef.current?.getTracks().forEach((track) => track.stop())
+    shouldSearchOnEndRef.current = false
+    if (limitTimerRef.current !== null) window.clearTimeout(limitTimerRef.current)
+    stopAudioCapture()
+    const socket = socketRef.current
+    socketRef.current = null
+    if (socket && socket.readyState < WebSocket.CLOSING) socket.close()
   }, [])
 
   async function parseSearch(text: string) {
@@ -41,7 +109,7 @@ export function SarvamSearch({ onApply }: Props) {
     try {
       const { data, error } = await supabase.functions.invoke<{ filters: ChargerSearchFilters }>(
         'sarvam-assistant',
-        { body: { action: 'parse-search', query: trimmed } },
+        { body: { query: trimmed } },
       )
       if (error) throw new Error(error.message)
       const parsed = data?.filters
@@ -70,73 +138,128 @@ export function SarvamSearch({ onApply }: Props) {
 
   async function startRecording() {
     setErrorMessage('')
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-      setErrorMessage('Voice search is not supported in this browser.')
+    setFilters(null)
+    finalizedTranscriptRef.current = ''
+    partialTranscriptRef.current = ''
+    shouldSearchOnEndRef.current = false
+    if (!navigator.mediaDevices?.getUserMedia || typeof AudioContext === 'undefined' || typeof WebSocket === 'undefined') {
+      setErrorMessage('Live voice search is not supported in this browser.')
       return
     }
     if (!window.isSecureContext) {
       setErrorMessage('Microphone access requires localhost or HTTPS.')
       return
     }
+
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } })
       streamRef.current = stream
-      const mimeType = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus']
-        .find((candidate) => MediaRecorder.isTypeSupported(candidate))
-      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
-      recorderRef.current = recorder
-      chunksRef.current = []
-      recorder.ondataavailable = (event) => {
-        if (event.data.size) chunksRef.current.push(event.data)
+      const context = new AudioContext()
+      audioContextRef.current = context
+      await context.resume()
+      const { data, error } = await supabase.auth.getSession()
+      if (error) throw new Error(error.message)
+      const token = data.session?.access_token
+      if (!token) throw new Error('Sign in again to use live voice search.')
+
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string
+      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string
+      const socketUrl = new URL(`${supabaseUrl.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:')}/functions/v1/sarvam-assistant`)
+      socketUrl.searchParams.set('action', 'live-transcribe')
+      socketUrl.searchParams.set('apikey', anonKey)
+      socketUrl.searchParams.set('jwt', token)
+      const socket = new WebSocket(socketUrl)
+      socketRef.current = socket
+
+      socket.onopen = () => {
+        const source = context.createMediaStreamSource(stream)
+        const processor = context.createScriptProcessor(4096, 1, 1)
+        const silentOutput = context.createGain()
+        silentOutput.gain.value = 0
+        processor.onaudioprocess = (event) => {
+          if (socket.readyState !== WebSocket.OPEN) return
+          const audio = event.inputBuffer.getChannelData(0)
+          const base64 = audioToBase64(audio, context.sampleRate)
+          if (base64) socket.send(JSON.stringify({ event: 'audio_input', audio: base64 }))
+        }
+        source.connect(processor)
+        processor.connect(silentOutput)
+        silentOutput.connect(context.destination)
+        audioContextRef.current = context
+        sourceRef.current = source
+        processorRef.current = processor
+        capturingRef.current = true
+        setRecording(true)
+        limitTimerRef.current = window.setTimeout(() => stopRecording(), 60_000)
       }
-      recorder.onerror = () => {
-        setErrorMessage('Recording failed. Check microphone permissions and try again.')
-        setRecording(false)
-      }
-      recorder.onstop = () => {
-        if (timeoutRef.current !== null) window.clearTimeout(timeoutRef.current)
-        timeoutRef.current = null
-        stream.getTracks().forEach((track) => track.stop())
-        streamRef.current = null
-        recorderRef.current = null
-        setRecording(false)
-        const audio = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' })
-        if (audio.size === 0) {
-          setErrorMessage('No audio was recorded. Try again.')
+
+      socket.onmessage = (message) => {
+        let event: RealtimeEvent
+        try {
+          event = JSON.parse(String(message.data)) as RealtimeEvent
+        } catch {
+          setErrorMessage('The live transcription service sent an invalid response.')
+          closeLiveTranscription()
           return
         }
-        void transcribe(audio)
+        if (event.event === 'relay.ready') return
+        if (event.event === 'transcript.partial' && typeof event.text === 'string') {
+          partialTranscriptRef.current = event.text
+          setQuery(joinTranscript(finalizedTranscriptRef.current, event.text))
+        } else if (event.event === 'transcript.final' && typeof event.text === 'string') {
+          finalizedTranscriptRef.current = joinTranscript(finalizedTranscriptRef.current, event.text)
+          partialTranscriptRef.current = ''
+          setQuery(finalizedTranscriptRef.current)
+        } else if (event.event === 'error') {
+          setErrorMessage(event.message || `Live transcription failed${event.code ? ` (${event.code})` : ''}.`)
+          shouldSearchOnEndRef.current = false
+          closeLiveTranscription()
+        } else if (event.event === 'session.end') {
+          const transcript = joinTranscript(finalizedTranscriptRef.current, partialTranscriptRef.current)
+          setQuery(transcript)
+          const shouldSearch = shouldSearchOnEndRef.current
+          shouldSearchOnEndRef.current = false
+          closeLiveTranscription()
+          if (shouldSearch && transcript) void parseSearch(transcript)
+          else if (!transcript) setErrorMessage('No speech was recognized. Try speaking closer to the microphone.')
+        }
       }
-      recorder.start()
-      setRecording(true)
-      timeoutRef.current = window.setTimeout(() => {
-        if (recorder.state === 'recording') recorder.stop()
-      }, 25_000)
+
+      socket.onerror = () => {
+        setErrorMessage('Could not connect to live speech transcription. Check your connection and try again.')
+        shouldSearchOnEndRef.current = false
+        closeLiveTranscription()
+      }
+      socket.onclose = (event) => {
+        if (socketRef.current !== socket) return
+        stopAudioCapture()
+        socketRef.current = null
+        setRecording(false)
+        setFinishingRecording(false)
+        if (event.code !== 1000 && event.code !== 1005) {
+          setErrorMessage(event.reason || `Live transcription connection closed (${event.code}).`)
+          shouldSearchOnEndRef.current = false
+        }
+      }
     } catch (error) {
+      stopAudioCapture()
       setErrorMessage(error instanceof Error && error.name === 'NotAllowedError'
         ? 'Microphone permission was denied. Allow access in your browser settings and try again.'
-        : error instanceof Error ? error.message : 'Could not start microphone recording.')
+        : error instanceof Error ? error.message : 'Could not start live voice search.')
     }
   }
 
-  async function transcribe(audio: Blob) {
-    setBusy(true)
-    try {
-      const formData = new FormData()
-      const extension = audio.type.includes('ogg') ? 'ogg' : 'webm'
-      formData.append('file', audio, `charger-search.${extension}`)
-      const { data, error } = await supabase.functions.invoke<{ transcript: string }>(
-        'sarvam-assistant',
-        { body: formData, headers: { 'x-sarvam-action': 'transcribe' } },
-      )
-      if (error) throw new Error(error.message)
-      if (!data?.transcript?.trim()) throw new Error('No speech was recognized. Try again.')
-      setQuery(data.transcript)
-      await parseSearch(data.transcript)
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Speech transcription failed. Text search is still available.')
-    } finally {
-      setBusy(false)
+  function stopRecording() {
+    if (!capturingRef.current || finishingRecording) return
+    shouldSearchOnEndRef.current = true
+    capturingRef.current = false
+    setRecording(false)
+    setFinishingRecording(true)
+    stopAudioCapture()
+    if (socketRef.current?.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify({ event: 'end' }))
+    } else {
+      closeLiveTranscription()
     }
   }
 
@@ -145,10 +268,6 @@ export function SarvamSearch({ onApply }: Props) {
     const updated = { ...filters, [key]: value }
     setFilters(updated)
     onApply(query, updated)
-  }
-
-  function stopRecording() {
-    if (recorderRef.current?.state === 'recording') recorderRef.current.stop()
   }
 
   return (
@@ -166,27 +285,29 @@ export function SarvamSearch({ onApply }: Props) {
               void parseSearch(query)
             }
           }}
-          placeholder="Type your charger search"
+          placeholder={recording ? 'Live transcript appears here as you speak…' : 'Type your charger search'}
           value={query}
         />
         <button
-          className="rounded-xl border border-emerald-700 px-4 py-2 text-sm font-semibold text-emerald-800 disabled:opacity-60"
-          disabled={busy}
+          aria-pressed={recording || finishingRecording}
+          className={`rounded-xl border px-4 py-2 text-sm font-semibold disabled:opacity-60 ${recording ? 'border-red-700 text-red-800' : 'border-emerald-700 text-emerald-800'}`}
+          disabled={busy || finishingRecording}
           onClick={() => recording ? stopRecording() : void startRecording()}
           type="button"
         >
-          {recording ? 'Stop recording' : '🎙 Speak'}
+          {finishingRecording ? 'Finishing…' : recording ? 'Stop & search' : '🎙 Speak'}
         </button>
         <button
           className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
-          disabled={busy || recording || !query.trim()}
+          disabled={busy || recording || finishingRecording || !query.trim()}
           onClick={() => void parseSearch(query)}
           type="button"
         >
           {busy ? 'Searching…' : 'Search'}
         </button>
       </div>
-      {recording && <p className="mt-2 text-sm text-emerald-800" role="status">Listening… recording stops automatically after 25 seconds.</p>}
+      {recording && <p className="mt-2 text-sm text-emerald-800" role="status">Listening — recognized words appear live. Stop to apply search filters.</p>}
+      {finishingRecording && <p className="mt-2 text-sm text-emerald-800" role="status">Finishing transcription…</p>}
       {errorMessage && <p className="mt-2 text-sm text-red-700" role="alert">{errorMessage}</p>}
       {filters && (
         <fieldset className="mt-4 grid gap-3 border-t border-slate-200 pt-4 sm:grid-cols-2 lg:grid-cols-3">

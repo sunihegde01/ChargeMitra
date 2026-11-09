@@ -290,9 +290,13 @@ export default function FindChargerPage() {
       vehiclePower,
       Number(charger.site_power_limit_kw) || Number(charger.rated_power_kw),
     )
-    const estimatedTotalSnapshot = Number((
+    const durationHours = (end.getTime() - start.getTime()) / (60 * 60 * 1000)
+    const estimatedTotalMinSnapshot = Number((
+      compatiblePower * 0.70 * durationHours * Number(charger.price_per_kwh)
+    ).toFixed(2))
+    const estimatedTotalMaxSnapshot = Number((
       compatiblePower * 0.85
-      * ((end.getTime() - start.getTime()) / (60 * 60 * 1000))
+      * durationHours
       * Number(charger.price_per_kwh)
     ).toFixed(2))
 
@@ -308,7 +312,9 @@ export default function FindChargerPage() {
       scheduled_end: end.toISOString(),
       price_per_kwh_snapshot: charger.price_per_kwh,
       payment_method: 'PAY_AT_STATION',
-      estimated_total_snapshot: estimatedTotalSnapshot,
+      estimated_total_snapshot: estimatedTotalMaxSnapshot,
+      estimated_total_min_snapshot: estimatedTotalMinSnapshot,
+      estimated_total_max_snapshot: estimatedTotalMaxSnapshot,
     })
 
     if (error?.code === '23P01' || error?.message.includes('no_overlap')) {
@@ -343,12 +349,18 @@ export default function FindChargerPage() {
       Number(selectedChargerDetails.charger.site_power_limit_kw) || Number(selectedChargerDetails.charger.rated_power_kw),
     )
     : null
-  const estimatedEnergyKwh = compatiblePowerKw !== null && Number.isFinite(bookingDurationHours) && bookingDurationHours > 0
+  const estimatedEnergyMinKwh = compatiblePowerKw !== null && Number.isFinite(bookingDurationHours) && bookingDurationHours > 0
+    ? compatiblePowerKw * 0.70 * bookingDurationHours
+    : null
+  const estimatedEnergyMaxKwh = compatiblePowerKw !== null && Number.isFinite(bookingDurationHours) && bookingDurationHours > 0
     ? compatiblePowerKw * 0.85 * bookingDurationHours
     : null
-  const estimatedTotal = estimatedEnergyKwh === null || !selectedChargerDetails
+  const estimatedTotalMin = estimatedEnergyMinKwh === null || !selectedChargerDetails
     ? null
-    : estimatedEnergyKwh * Number(selectedChargerDetails.charger.price_per_kwh)
+    : estimatedEnergyMinKwh * Number(selectedChargerDetails.charger.price_per_kwh)
+  const estimatedTotalMax = estimatedEnergyMaxKwh === null || !selectedChargerDetails
+    ? null
+    : estimatedEnergyMaxKwh * Number(selectedChargerDetails.charger.price_per_kwh)
 
   return (
     <main className="min-h-screen bg-[#f7f9f6] px-6 py-8 text-slate-900">
@@ -452,21 +464,21 @@ export default function FindChargerPage() {
                   </label>
                 </fieldset>
                 <div className="rounded-2xl bg-emerald-50 p-4 sm:col-span-2">
-                  <p className="text-sm font-semibold text-emerald-900">Estimated final amount</p>
+                  <p className="text-sm font-semibold text-emerald-900">Estimated amount range</p>
                   {compatiblePowerKw !== null && compatiblePowerKw <= 0 ? (
                     <p className="mt-1 text-sm text-red-800">Your selected vehicle does not support this charger type.</p>
-                  ) : estimatedTotal === null ? (
+                  ) : estimatedTotalMin === null || estimatedTotalMax === null ? (
                     <p className="mt-1 text-sm text-emerald-800">Choose a valid start and end time to see the estimate.</p>
                   ) : (
                     <>
-                      <p className="mt-1 text-2xl font-bold text-emerald-900">₹{estimatedTotal.toFixed(2)}</p>
+                      <p className="mt-1 text-2xl font-bold text-emerald-900">₹{estimatedTotalMin.toFixed(2)} – ₹{estimatedTotalMax.toFixed(2)}</p>
                       <p className="mt-1 text-sm text-emerald-800">
-                        Based on about {estimatedEnergyKwh?.toFixed(2)} kWh at ₹{selectedChargerDetails.charger.price_per_kwh}/kWh. This estimate uses 85% of rated power; the amount due at the station is based on energy actually delivered.
+                        Based on about {estimatedEnergyMinKwh?.toFixed(2)}–{estimatedEnergyMaxKwh?.toFixed(2)} kWh at ₹{selectedChargerDetails.charger.price_per_kwh}/kWh (70%–85% of compatible power). This is an estimate; the amount due at the station is based on energy actually delivered.
                       </p>
                     </>
                   )}
                 </div>
-                <button className="rounded-full bg-emerald-700 px-5 py-3 font-semibold text-white disabled:opacity-60 sm:col-span-2" disabled={!vehicles.length || savingId === selectedChargerDetails.charger.id || estimatedTotal === null || estimatedTotal <= 0 || !Number.isFinite(estimatedTotal)} type="submit">
+                <button className="rounded-full bg-emerald-700 px-5 py-3 font-semibold text-white disabled:opacity-60 sm:col-span-2" disabled={!vehicles.length || savingId === selectedChargerDetails.charger.id || estimatedTotalMin === null || estimatedTotalMin <= 0 || !Number.isFinite(estimatedTotalMax ?? NaN)} type="submit">
                   {savingId === selectedChargerDetails.charger.id ? 'Requesting...' : 'Request booking'}
                 </button>
               </form>

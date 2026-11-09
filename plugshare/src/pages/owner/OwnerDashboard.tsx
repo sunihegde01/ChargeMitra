@@ -21,6 +21,8 @@ type Booking = {
   scheduled_end: string
   price_per_kwh_snapshot: number
   estimated_total_snapshot: number | null
+  estimated_total_min_snapshot: number | null
+  estimated_total_max_snapshot: number | null
   payment_method: string | null
   charger_id: string
 }
@@ -225,7 +227,7 @@ export default function OwnerDashboard() {
         .order('created_at', { ascending: false }),
       supabase
         .from('bookings')
-        .select('id,status,scheduled_start,scheduled_end,price_per_kwh_snapshot,estimated_total_snapshot,payment_method,charger_id')
+        .select('id,status,scheduled_start,scheduled_end,price_per_kwh_snapshot,estimated_total_snapshot,estimated_total_min_snapshot,estimated_total_max_snapshot,payment_method,charger_id')
         .eq('owner_id', user.id)
         .order('created_at', { ascending: false }),
     ])
@@ -495,7 +497,13 @@ export default function OwnerDashboard() {
                   <li className="py-4 first:pt-0 last:pb-0" key={booking.id}>
                     <p className="font-semibold">{chargers.find((charger) => charger.id === booking.charger_id)?.name ?? 'Charger booking'}</p>
                     <p className="mt-1 text-sm text-slate-600">{new Date(booking.scheduled_start).toLocaleString()} · {booking.status}</p>
-                    <p className="mt-1 text-sm text-slate-600">₹{booking.price_per_kwh_snapshot}/kWh · Estimated total {booking.estimated_total_snapshot == null ? 'not available' : `₹${Number(booking.estimated_total_snapshot).toFixed(2)}`}</p>
+                    <p className="mt-1 text-sm text-slate-600">
+                      ₹{booking.price_per_kwh_snapshot}/kWh · Estimated amount range {
+                        booking.estimated_total_min_snapshot != null && booking.estimated_total_max_snapshot != null
+                          ? `₹${Number(booking.estimated_total_min_snapshot).toFixed(2)}–₹${Number(booking.estimated_total_max_snapshot).toFixed(2)}`
+                          : booking.estimated_total_snapshot == null ? 'not available' : `up to ₹${Number(booking.estimated_total_snapshot).toFixed(2)}`
+                      }
+                    </p>
                     <p className="mt-1 text-sm text-slate-600">Payment: {booking.payment_method === 'PAY_AT_STATION' ? 'Pay at station (cash/UPI)' : booking.payment_method ?? 'Not recorded'}</p>
                     {sessionsByBooking[booking.id] && (
                       <Link className="mt-2 inline-flex text-sm font-semibold text-emerald-700 underline" to={`/session/${sessionsByBooking[booking.id]}`}>Open charging session</Link>

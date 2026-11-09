@@ -1,6 +1,8 @@
 alter table public.bookings
   add column if not exists payment_method text,
   add column if not exists estimated_total_snapshot numeric(12, 2),
+  add column if not exists estimated_total_min_snapshot numeric(12, 2),
+  add column if not exists estimated_total_max_snapshot numeric(12, 2),
   add column if not exists calculation_method text,
   add column if not exists provider_method_approved_at timestamptz;
 
@@ -71,6 +73,23 @@ begin
     alter table public.bookings
       add constraint bookings_estimated_total_nonnegative
       check (estimated_total_snapshot is null or estimated_total_snapshot >= 0);
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.bookings'::regclass
+      and conname = 'bookings_estimated_range_nonnegative'
+  ) then
+    alter table public.bookings
+      add constraint bookings_estimated_range_nonnegative
+      check (
+        (estimated_total_min_snapshot is null or estimated_total_min_snapshot >= 0)
+        and (estimated_total_max_snapshot is null or estimated_total_max_snapshot >= 0)
+        and (
+          estimated_total_min_snapshot is null
+          or estimated_total_max_snapshot is null
+          or estimated_total_min_snapshot <= estimated_total_max_snapshot
+        )
+      );
   end if;
   if not exists (
     select 1 from pg_constraint

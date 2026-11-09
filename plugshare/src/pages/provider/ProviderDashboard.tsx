@@ -6,7 +6,7 @@ import { supabase } from '../../supabase'
 type Provider = { id: string; business_name: string; category: string; address: string | null; verified: boolean }
 type Charger = { id: string; name: string; charger_type: string; rated_power_kw: number; price_per_kwh: number; is_active: boolean; has_dedicated_meter: boolean }
 type CalculationMethod = 'METER_BASED' | 'TIME_BASED'
-type Booking = { id: string; charger_id: string; status: string; scheduled_start: string; scheduled_end: string; price_per_kwh_snapshot: number; estimated_total_snapshot: number | null; payment_method: string | null; calculation_method: CalculationMethod | null }
+type Booking = { id: string; charger_id: string; status: string; scheduled_start: string; scheduled_end: string; price_per_kwh_snapshot: number; estimated_total_snapshot: number | null; estimated_total_min_snapshot: number | null; estimated_total_max_snapshot: number | null; payment_method: string | null; calculation_method: CalculationMethod | null }
 type SessionLink = { id: string; booking_id: string }
 
 export default function ProviderDashboard() {
@@ -48,7 +48,7 @@ export default function ProviderDashboard() {
 
     const [chargerResult, bookingResult] = await Promise.all([
       supabase.from('chargers').select('id,name,charger_type,rated_power_kw,price_per_kwh,is_active,has_dedicated_meter').eq('provider_id', providerRow.id).order('created_at', { ascending: false }),
-      supabase.from('bookings').select('id,charger_id,status,scheduled_start,scheduled_end,price_per_kwh_snapshot,estimated_total_snapshot,payment_method,calculation_method').eq('provider_id', providerRow.id).order('created_at', { ascending: false }),
+      supabase.from('bookings').select('id,charger_id,status,scheduled_start,scheduled_end,price_per_kwh_snapshot,estimated_total_snapshot,estimated_total_min_snapshot,estimated_total_max_snapshot,payment_method,calculation_method').eq('provider_id', providerRow.id).order('created_at', { ascending: false }),
     ])
     if (chargerResult.error || bookingResult.error) {
       setErrorMessage(chargerResult.error?.message ?? bookingResult.error?.message ?? 'Could not load provider data.')
@@ -201,7 +201,13 @@ export default function ProviderDashboard() {
                     <li className="py-4 first:pt-0 last:pb-0" key={booking.id}>
                       <p className="font-semibold">{chargers.find((charger) => charger.id === booking.charger_id)?.name ?? 'Charger booking'}</p>
                       <p className="mt-1 text-sm text-slate-600">{new Date(booking.scheduled_start).toLocaleString()}</p>
-                      <p className="mt-1 text-sm text-slate-600">{booking.status} · ₹{booking.price_per_kwh_snapshot}/kWh · Estimated total {booking.estimated_total_snapshot == null ? 'not available' : `₹${Number(booking.estimated_total_snapshot).toFixed(2)}`}</p>
+                      <p className="mt-1 text-sm text-slate-600">
+                        {booking.status} · ₹{booking.price_per_kwh_snapshot}/kWh · Estimated amount range {
+                          booking.estimated_total_min_snapshot != null && booking.estimated_total_max_snapshot != null
+                            ? `₹${Number(booking.estimated_total_min_snapshot).toFixed(2)}–₹${Number(booking.estimated_total_max_snapshot).toFixed(2)}`
+                            : booking.estimated_total_snapshot == null ? 'not available' : `up to ₹${Number(booking.estimated_total_snapshot).toFixed(2)}`
+                        }
+                      </p>
                       <p className="mt-1 text-sm text-slate-600">Payment: {booking.payment_method === 'PAY_AT_STATION' ? 'Pay at station (cash/UPI)' : booking.payment_method ?? 'Not recorded'}</p>
                       {booking.calculation_method && (
                         <p className="mt-1 text-sm font-medium text-slate-700">

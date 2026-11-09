@@ -33,6 +33,8 @@ type Booking = {
   provider_id: string
   price_per_kwh_snapshot: number
   estimated_total_snapshot: number | null
+  estimated_total_min_snapshot: number | null
+  estimated_total_max_snapshot: number | null
   payment_method: string | null
   scheduled_start: string
   scheduled_end: string
@@ -100,7 +102,7 @@ export default function ActiveSessionPage() {
 
     const { data: bookingRow, error: bookingError } = await supabase
       .from('bookings')
-      .select('charger_id,owner_id,provider_id,price_per_kwh_snapshot,estimated_total_snapshot,payment_method,scheduled_start,scheduled_end')
+      .select('charger_id,owner_id,provider_id,price_per_kwh_snapshot,estimated_total_snapshot,estimated_total_min_snapshot,estimated_total_max_snapshot,payment_method,scheduled_start,scheduled_end')
       .eq('id', sessionRow.booking_id)
       .maybeSingle()
     if (bookingError) {
@@ -253,8 +255,10 @@ export default function ActiveSessionPage() {
                       ? `₹${Number(finalAmount).toFixed(2)}`
                       : session.status === 'STOPPED'
                         ? 'Unavailable'
-                      : booking?.estimated_total_snapshot != null
-                        ? `₹${Number(booking.estimated_total_snapshot).toFixed(2)} (estimate)`
+                      : booking?.estimated_total_min_snapshot != null && booking.estimated_total_max_snapshot != null
+                        ? `₹${Number(booking.estimated_total_min_snapshot).toFixed(2)}–₹${Number(booking.estimated_total_max_snapshot).toFixed(2)} (estimate)`
+                        : booking?.estimated_total_snapshot != null
+                          ? `Up to ₹${Number(booking.estimated_total_snapshot).toFixed(2)} (estimate)`
                         : 'Unavailable'}
                   </dd>
                 </div>

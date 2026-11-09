@@ -33,7 +33,13 @@ export default function RegisterPage() {
       })
 
       if (error) {
-        setErrorMessage(error.message)
+        const message = error.message.toLowerCase()
+        setErrorMessage(
+          message.includes('database error saving new user')
+            || message.includes('handle_new_auth_user')
+            ? 'Supabase could not create your account profile. Run plugshare/supabase-fix.sql once in your Supabase SQL Editor, then try registering again.'
+            : error.message,
+        )
       } else if (data.user && !data.session) {
         setSuccessMessage('Check your email to confirm your account.')
       } else if (data.user) {
@@ -53,9 +59,6 @@ export default function RegisterPage() {
   return (
     <main className="mx-auto max-w-md p-8">
       <h1 className="mb-6 text-2xl font-semibold">Create an account</h1>
-      <p className="mb-5 rounded-xl bg-amber-50 p-4 text-sm text-amber-900">
-        Before registering, run <code>supabase-fix.sql</code> from the project in your Supabase SQL Editor to enable profile creation.
-      </p>
       <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
         <fieldset className="grid grid-cols-2 gap-3">
           <legend className="mb-2 text-sm font-medium">Create an account as</legend>

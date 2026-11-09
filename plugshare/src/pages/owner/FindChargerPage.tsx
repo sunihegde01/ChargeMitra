@@ -106,28 +106,20 @@ export default function FindChargerPage() {
       return [charger.name, charger.charger_type, charger.connector_type, provider?.business_name, provider?.address]
         .some((value) => value?.toLowerCase().includes(term))
     }) : chargers
-    return [...matchesSearch].sort((first, second) => {
-      const firstProvider = providers.find((item) => item.id === first.provider_id)
-      const secondProvider = providers.find((item) => item.id === second.provider_id)
-      const firstPoint = firstProvider ? parsePoint(firstProvider.location) : null
-      const secondPoint = secondProvider ? parsePoint(secondProvider.location) : null
-      const firstDistance = firstPoint ? distanceInKm(searchCenter, firstPoint) : Number.POSITIVE_INFINITY
-      const secondDistance = secondPoint ? distanceInKm(searchCenter, secondPoint) : Number.POSITIVE_INFINITY
-      return firstDistance - secondDistance
-    })
+    return matchesSearch.flatMap((charger) => {
+      const provider = providers.find((item) => item.id === charger.provider_id)
+      const point = provider ? parsePoint(provider.location) : null
+      return point ? [{ charger, point, distance: distanceInKm(searchCenter, point) }] : []
+    }).sort((first, second) => first.distance - second.distance)
   }, [chargers, providers, search, searchCenter])
 
-  const pins = useMemo(() => visibleChargers.flatMap((charger) => {
-    const provider = providers.find((item) => item.id === charger.provider_id)
-    const point = provider ? parsePoint(provider.location) : null
-    return point ? [{
+  const pins = useMemo(() => visibleChargers.map(({ charger, point }) => ({
       id: charger.id,
       lat: point.lat,
       lng: point.lng,
       name: charger.name,
       pricePerKwh: Number(charger.price_per_kwh),
-    }] : []
-  }), [providers, visibleChargers])
+    })), [visibleChargers])
 
   async function searchAddress(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -257,31 +249,30 @@ export default function FindChargerPage() {
         {successMessage && <p className="mt-5 rounded-xl bg-emerald-50 p-4 text-emerald-800" role="status">{successMessage}</p>}
 
         <section className="mt-6 overflow-hidden rounded-3xl border border-slate-200 bg-white p-2">
-          <ChargerMap chargers={pins} center={searchCenter} userLocation={userLocation} key={`${searchCenter.lat},${searchCenter.lng}`} />
+          <ChargerMap chargers={pins} center={searchCenter} nearestChargerId={visibleChargers[0]?.charger.id} userLocation={userLocation} key={`${searchCenter.lat},${searchCenter.lng}`} />
         </section>
 
         <section className="mt-8">
           <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
             <div>
               <h2 className="text-xl font-semibold">Nearest available charging points</h2>
-              <p className="mt-1 text-sm text-slate-600">Active stations are sorted by distance. Time-slot conflicts are checked when you request a booking.</p>
+              <p className="mt-1 text-sm text-slate-600">The closest mapped station appears first. Time-slot conflicts are checked when you request a booking.</p>
             </div>
             {!vehicles.length && !loading && <Link className="text-sm font-semibold text-emerald-700 underline" to="/owner/dashboard">Add a vehicle to book</Link>}
           </div>
           {loading ? <p className="text-slate-600">Loading stations...</p> : visibleChargers.length ? (
             <div className="grid gap-4 lg:grid-cols-2">
-              {visibleChargers.map((charger) => {
+              {visibleChargers.map(({ charger, distance }, index) => {
                 const provider = providers.find((item) => item.id === charger.provider_id)
-                const point = provider ? parsePoint(provider.location) : null
-                const distance = point ? distanceInKm(searchCenter, point) : null
                 return (
-                  <article className="rounded-3xl border border-slate-200 bg-white p-6" key={charger.id}>
+                  <article className={`rounded-3xl border bg-white p-6 ${index === 0 ? 'border-emerald-500 ring-2 ring-emerald-100' : 'border-slate-200'}`} key={charger.id}>
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
+                        {index === 0 && <p className="text-xs font-bold uppercase tracking-wide text-emerald-700">Nearest charging point</p>}
                         <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">{charger.charger_type} charger · {charger.rated_power_kw} kW</p>
                         <h3 className="mt-2 text-xl font-semibold">{charger.name}</h3>
                         <p className="mt-1 text-slate-600">{provider?.business_name ?? 'Charging provider'}{provider?.address ? ` · ${provider.address}` : ''}</p>
-                        <p className="mt-2 text-sm font-medium text-emerald-800">{distance === null ? 'Distance unavailable' : `${distance.toFixed(1)} km away`}</p>
+                        <p className="mt-2 text-sm font-medium text-emerald-800">{distance.toFixed(1)} km away</p>
                         <p className="mt-2 text-sm text-slate-600">Connector: {charger.connector_type}</p>
                       </div>
                       <p className="rounded-full bg-emerald-50 px-4 py-2 font-semibold text-emerald-800">₹{charger.price_per_kwh}/kWh</p>
@@ -309,7 +300,7 @@ export default function FindChargerPage() {
                 )
               })}
             </div>
-          ) : <p className="rounded-2xl bg-white p-6 text-slate-600">{search ? 'No matching charging stations found.' : 'No active charging stations are listed yet.'}</p>}
+          ) : <p className="rounded-2xl bg-white p-6 text-slate-600" role="status">{search ? 'No charger found matching your search near this location.' : 'No charger found near this location.'}</p>}
         </section>
       </div>
     </main>

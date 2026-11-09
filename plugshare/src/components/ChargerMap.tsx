@@ -11,10 +11,11 @@ type ChargerPin = {
   pricePerKwh: number
 }
 
-export function ChargerMap({ chargers, center, userLocation }: {
+export function ChargerMap({ chargers, center, userLocation, nearestChargerId }: {
   chargers: ChargerPin[]
   center: { lat: number; lng: number }
   userLocation?: { lat: number; lng: number } | null
+  nearestChargerId?: string
 }) {
   const initialViewState = useMemo(() => ({
     latitude: center.lat,
@@ -37,10 +38,15 @@ export function ChargerMap({ chargers, center, userLocation }: {
           anchor="bottom"
         >
           <div className="flex flex-col items-center">
-            <div className="rounded-full bg-emerald-600 px-2 py-1 text-xs font-semibold text-white shadow">
+            {charger.id === nearestChargerId && (
+              <div className="mb-1 rounded-full bg-blue-700 px-2 py-1 text-xs font-semibold text-white shadow">
+                Nearest
+              </div>
+            )}
+            <div className={`rounded-full px-2 py-1 text-xs font-semibold text-white shadow ${charger.id === nearestChargerId ? 'bg-blue-700' : 'bg-emerald-600'}`}>
               ₹{charger.pricePerKwh}/kWh
             </div>
-            <div className="mt-1 h-3 w-1 bg-emerald-600" />
+            <div className={`mt-1 h-3 w-1 ${charger.id === nearestChargerId ? 'bg-blue-700' : 'bg-emerald-600'}`} />
           </div>
         </Marker>
       ))}

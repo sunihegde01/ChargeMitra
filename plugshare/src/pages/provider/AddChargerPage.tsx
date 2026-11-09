@@ -34,6 +34,7 @@ export default function AddChargerPage() {
   const [initializing, setInitializing] = useState(true)
   const [errorMessage, setErrorMessage] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
+  const locationSelected = Boolean(latitude && longitude)
 
   useEffect(() => {
     let active = true
@@ -245,8 +246,15 @@ export default function AddChargerPage() {
                   onClick={useCurrentLocation}
                   type="button"
                 >
-                  {locating ? 'Getting location and address...' : 'Use my current location'}
+                  {locating ? 'Getting location and address...' : locationSelected ? 'Location selected · Update location' : 'Use my current location'}
                 </button>
+                {locationSelected && (
+                  <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900" role="status">
+                    <p className="font-semibold">Location added</p>
+                    <p className="mt-1">{address || 'Address lookup unavailable; the map pin will be saved.'}</p>
+                    <p className="mt-1 text-xs text-emerald-800">Coordinates: {Number(latitude).toFixed(6)}, {Number(longitude).toFixed(6)}</p>
+                  </div>
+                )}
                 <p className="mt-2 text-sm text-slate-600">
                   Use your current location or click anywhere on the map to place the charger pin.
                 </p>

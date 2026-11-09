@@ -1,8 +1,31 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import { ChargerDirections } from '../../components/ChargerDirections'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../supabase'
+
+type Point = { lat: number; lng: number }
+
+function parsePoint(location: unknown): Point | null {
+  if (typeof location === 'string') {
+    const point = location.match(/POINT\s*\(\s*(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s*\)/i)
+    if (point) return { lng: Number(point[1]), lat: Number(point[2]) }
+    try {
+      return parsePoint(JSON.parse(location) as unknown)
+    } catch {
+      return null
+    }
+  }
+  if (typeof location === 'object' && location !== null && 'coordinates' in location) {
+    const coordinates = location.coordinates
+    if (Array.isArray(coordinates) && coordinates.length >= 2) {
+      const [lng, lat] = coordinates
+      if (typeof lat === 'number' && typeof lng === 'number') return { lat, lng }
+    }
+  }
+  return null
+}
 
 type Session = {
   id: string
@@ -34,6 +57,7 @@ export default function ActiveSessionPage() {
   const [session, setSession] = useState<Session | null>(null)
   const [booking, setBooking] = useState<Booking | null>(null)
   const [charger, setCharger] = useState<Charger | null>(null)
+  const [chargerLocation, setChargerLocation] = useState<Point | null>(null)
   const [isOwner, setIsOwner] = useState(false)
   const [isProvider, setIsProvider] = useState(false)
   const [method, setMethod] = useState<'METER_BASED' | 'TIME_BASED'>('METER_BASED')
@@ -53,6 +77,7 @@ export default function ActiveSessionPage() {
 
     setLoading(true)
     setErrorMessage('')
+    setChargerLocation(null)
     const { data: sessionRow, error: sessionError } = await supabase
       .from('charging_sessions')
       .select('id,booking_id,calculation_method,method_confirmed_by_owner,started_at,ended_at,paused_seconds,initial_meter_reading,final_meter_reading,actual_kwh,estimated_kwh,status')
@@ -85,11 +110,12 @@ export default function ActiveSessionPage() {
       setIsOwner(bookingRow.owner_id === user?.id)
       const { data: provider, error: providerError } = await supabase
         .from('providers')
-        .select('profile_id')
+        .select('profile_id,location')
         .eq('id', bookingRow.provider_id)
         .maybeSingle()
       if (providerError) setErrorMessage(providerError.message)
       setIsProvider(provider?.profile_id === user?.id)
+      setChargerLocation(parsePoint(provider?.location))
 
       const { data: chargerRow, error: chargerError } = await supabase
         .from('chargers')
@@ -170,6 +196,14 @@ export default function ActiveSessionPage() {
                 </div>
                 <span className="rounded-full bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-800">{session.status}</span>
               </div>
+              {isOwner && booking && charger && chargerLocation && (
+                <ChargerDirections destination={chargerLocation} chargerName={charger.name} />
+              )}
+              {isOwner && booking && charger && !chargerLocation && (
+                <p className="mt-6 rounded-xl bg-amber-50 p-4 text-sm text-amber-900" role="status">
+                  The host has not added a map location for this charging station yet.
+                </p>
+              )}
               <dl className="mt-6 grid gap-4 sm:grid-cols-2">
                 <div className="rounded-2xl border border-slate-200 p-4">
                   <dt className="text-sm text-slate-500">Calculation method</dt>

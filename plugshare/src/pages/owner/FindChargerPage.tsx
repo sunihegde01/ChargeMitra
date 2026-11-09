@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { ChargerMap } from '../../components/ChargerMap'
 import { useAuth } from '../../context/AuthContext'
 import { parsePoint, type Point } from '../../location'
+import { getDefaultVehicleId, setDefaultVehicleId } from '../../vehiclePreference'
 import { supabase } from '../../supabase'
 
 type Provider = {
@@ -48,6 +49,7 @@ export default function FindChargerPage() {
   const [locating, setLocating] = useState(false)
   const [selectedChargerId, setSelectedChargerId] = useState('')
   const [vehicleId, setVehicleId] = useState('')
+  const [preferredVehicleId, setPreferredVehicleId] = useState('')
   const [startsAt, setStartsAt] = useState('')
   const [endsAt, setEndsAt] = useState('')
   const [savingId, setSavingId] = useState('')
@@ -72,7 +74,17 @@ export default function FindChargerPage() {
     }
     setChargers(chargerResult.data ?? [])
     setProviders((providerResult.data ?? []) as Provider[])
-    setVehicles(vehicleResult.data ?? [])
+    const vehicleRows = vehicleResult.data ?? []
+    setVehicles(vehicleRows)
+    const savedVehicleId = getDefaultVehicleId(user.id)
+    const nextDefaultVehicleId = vehicleRows.some((vehicle) => vehicle.id === savedVehicleId)
+      ? savedVehicleId
+      : vehicleRows[0]?.id ?? ''
+    setPreferredVehicleId(nextDefaultVehicleId)
+    setVehicleId(nextDefaultVehicleId)
+    if (nextDefaultVehicleId && savedVehicleId !== nextDefaultVehicleId) {
+      setDefaultVehicleId(user.id, nextDefaultVehicleId)
+    }
     setLoading(false)
   }, [user])
 
@@ -320,7 +332,9 @@ export default function FindChargerPage() {
                           />
                           <span>
                             <span className="block font-semibold text-slate-900">{vehicle.brand} {vehicle.model}</span>
-                            <span className="mt-1 block text-xs text-slate-600">Use this car for the selected charging point</span>
+                            <span className="mt-1 block text-xs text-slate-600">
+                              {vehicle.id === preferredVehicleId ? 'Default car · preselected' : 'Select this car for the booking'}
+                            </span>
                           </span>
                         </label>
                       ))}

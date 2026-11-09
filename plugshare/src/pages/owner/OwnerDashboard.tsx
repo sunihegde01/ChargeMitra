@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent, KeyboardEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
+import { clearDefaultVehicleId, getDefaultVehicleId, setDefaultVehicleId } from '../../vehiclePreference'
 import { supabase } from '../../supabase'
 
 type Vehicle = {
@@ -129,6 +130,7 @@ export default function OwnerDashboard() {
   const [saving, setSaving] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
+  const [defaultVehicleId, setDefaultVehicleIdState] = useState('')
   const [brand, setBrand] = useState('')
   const [model, setModel] = useState('')
   const [battery, setBattery] = useState('')
@@ -238,6 +240,13 @@ export default function OwnerDashboard() {
     const bookingRows = bookingsResult.data ?? []
     setVehicles(vehicleRows)
     setBookings(bookingRows)
+    const savedVehicleId = getDefaultVehicleId(user.id)
+    const nextDefaultVehicleId = vehicleRows.some((vehicle) => vehicle.id === savedVehicleId)
+      ? savedVehicleId
+      : vehicleRows[0]?.id ?? ''
+    setDefaultVehicleIdState(nextDefaultVehicleId)
+    if (nextDefaultVehicleId) setDefaultVehicleId(user.id, nextDefaultVehicleId)
+    else clearDefaultVehicleId(user.id)
 
     const bookingIds = bookingRows.map((booking) => booking.id)
     if (bookingIds.length) {
@@ -273,6 +282,13 @@ export default function OwnerDashboard() {
     void loadDashboard()
   }, [loadDashboard])
 
+  function chooseDefaultVehicle(vehicleId: string) {
+    if (!user) return
+    setDefaultVehicleIdState(vehicleId)
+    setDefaultVehicleId(user.id, vehicleId)
+    setSuccessMessage('Default car for bookings updated.')
+  }
+
   async function addVehicle(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!user) return
@@ -280,7 +296,7 @@ export default function OwnerDashboard() {
     setErrorMessage('')
     setSuccessMessage('')
 
-    const { error } = await supabase.from('vehicles').insert({
+    const { data, error } = await supabase.from('vehicles').insert({
       owner_id: user.id,
       brand,
       model,
@@ -288,11 +304,13 @@ export default function OwnerDashboard() {
       max_ac_kw: Number(maxAc),
       max_dc_kw: Number(maxDc),
       connector_types: connectors.split(',').map((connector) => connector.trim()).filter(Boolean),
-    })
+    }).select('id').single()
 
-    if (error) {
-      setErrorMessage(error.message)
+    if (error || !data) {
+      setErrorMessage(error?.message ?? 'The car was added but could not be selected.')
     } else {
+      setDefaultVehicleIdState(data.id)
+      setDefaultVehicleId(user.id, data.id)
       setBrand('')
       setModel('')
       setBattery('')
@@ -339,6 +357,32 @@ export default function OwnerDashboard() {
                 ))}
               </ul>
             ) : <p className="mt-4 text-slate-600">Add your car to start booking chargers.</p>}
+
+            {!!vehicles.length && (
+              <fieldset className="mt-5 rounded-2xl border border-slate-200 p-4">
+                <legend className="px-1 text-sm font-semibold">Default car for bookings</legend>
+                <p className="mb-3 text-xs text-slate-600">This car is preselected when you book. You can change it for each booking.</p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {vehicles.map((vehicle) => (
+                    <label
+                      className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3 ${defaultVehicleId === vehicle.id ? 'border-emerald-600 bg-emerald-50' : 'border-slate-200'}`}
+                      key={vehicle.id}
+                    >
+                      <input
+                        checked={defaultVehicleId === vehicle.id}
+                        className="accent-emerald-700"
+                        name="default-vehicle"
+                        onChange={() => chooseDefaultVehicle(vehicle.id)}
+                        type="radio"
+                        value={vehicle.id}
+                      />
+                      <span className="font-medium">{vehicle.brand} {vehicle.model}</span>
+                      {defaultVehicleId === vehicle.id && <span className="ml-auto text-xs font-semibold text-emerald-800">Default</span>}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+            )}
 
             <form className="mt-6 grid gap-3 border-t border-slate-100 pt-6 sm:grid-cols-2" id="add-car" onSubmit={addVehicle}>
               <h3 className="font-semibold sm:col-span-2">Add your car</h3>

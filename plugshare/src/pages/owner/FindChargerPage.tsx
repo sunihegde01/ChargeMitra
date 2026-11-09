@@ -154,31 +154,48 @@ export default function FindChargerPage() {
 
   function useMyLocation() {
     setErrorMessage('')
+    setSuccessMessage('')
     if (!navigator.geolocation) {
       setErrorMessage('Location access is not supported by this browser.')
       return
     }
+    if (!window.isSecureContext) {
+      setErrorMessage('Location access requires a secure connection. Open this site on localhost or HTTPS.')
+      return
+    }
 
     setLocating(true)
-    navigator.geolocation.getCurrentPosition(
-      ({ coords }) => {
-        const point = { lat: coords.latitude, lng: coords.longitude }
-        setSearchCenter(point)
-        setUserLocation(point)
-        setSearch('')
-        setLocating(false)
-      },
-      (error) => {
-        const message = error.code === error.PERMISSION_DENIED
-          ? 'Location permission was denied. Allow location access in your browser settings and try again.'
-          : error.code === error.TIMEOUT
-            ? 'Finding your location timed out. Please try again.'
-            : 'Your location could not be determined. Check that location services are enabled and try again.'
-        setErrorMessage(message)
-        setLocating(false)
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
-    )
+    try {
+      navigator.geolocation.getCurrentPosition(
+        ({ coords }) => {
+          const point = { lat: coords.latitude, lng: coords.longitude }
+          if (!Number.isFinite(point.lat) || !Number.isFinite(point.lng)
+            || Math.abs(point.lat) > 90 || Math.abs(point.lng) > 180) {
+            setErrorMessage('Your browser returned an invalid location. Try again or search for an address.')
+            setLocating(false)
+            return
+          }
+          setSearchCenter(point)
+          setUserLocation(point)
+          setSearch('')
+          setSuccessMessage('Your location is selected. Nearby charging points are sorted by distance.')
+          setLocating(false)
+        },
+        (error) => {
+          const message = error.code === error.PERMISSION_DENIED
+            ? 'Location permission was denied. Allow location access for this site in your browser settings, then try again.'
+            : error.code === error.TIMEOUT
+              ? 'Finding your location timed out. Check device location services and try again.'
+              : 'Your location is unavailable. Check device location services or search for an address.'
+          setErrorMessage(message)
+          setLocating(false)
+        },
+        { enableHighAccuracy: false, timeout: 30000, maximumAge: 120000 },
+      )
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Could not start location access. Check this site's browser permissions.")
+      setLocating(false)
+    }
   }
 
   async function bookCharger(event: FormEvent<HTMLFormElement>, charger: Charger) {

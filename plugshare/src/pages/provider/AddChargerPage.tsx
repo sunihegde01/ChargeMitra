@@ -3,6 +3,7 @@ import type { FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import Map, { Marker, NavigationControl } from 'react-map-gl/maplibre'
 import 'maplibre-gl/dist/maplibre-gl.css'
+import { MAP_STYLE } from '../../mapStyle'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../supabase'
 
@@ -61,7 +62,7 @@ export default function AddChargerPage() {
     setLatitude(String(latitude))
     setLongitude(String(longitude))
     setErrorMessage('')
-    setSuccessMessage('')
+    setSuccessMessage('Location selected. Looking up the address...')
 
     setMapViewState((view) => ({
       ...view,
@@ -107,19 +108,29 @@ export default function AddChargerPage() {
       setErrorMessage('Location access is not supported by this browser. Select the location on the map instead.')
       return
     }
+    if (!window.isSecureContext) {
+      setErrorMessage('Location access requires a secure connection. Open this site on localhost or HTTPS, or select a location on the map.')
+      return
+    }
 
     setLocating(true)
-    navigator.geolocation.getCurrentPosition(({ coords }) => {
-      void setSelectedLocation(coords.latitude, coords.longitude).finally(() => setLocating(false))
-    }, (error) => {
-      const message = error.code === error.PERMISSION_DENIED
-        ? 'Location permission was denied. Allow it in your browser settings or select a location on the map.'
-        : error.code === error.POSITION_UNAVAILABLE
-          ? 'Your location is unavailable right now. Try again or select a location on the map.'
-          : 'Could not get your location in time. Try again or select a location on the map.'
-      setErrorMessage(message)
+    try {
+      navigator.geolocation.getCurrentPosition(({ coords }) => {
+        setLocating(false)
+        void setSelectedLocation(coords.latitude, coords.longitude)
+      }, (error) => {
+        const message = error.code === error.PERMISSION_DENIED
+          ? 'Location permission was denied. Allow it for this site in your browser settings, or select a location on the map.'
+          : error.code === error.POSITION_UNAVAILABLE
+            ? 'Your location is unavailable right now. Check device location services or select a location on the map.'
+            : 'Finding your location timed out. Try again or select a location on the map.'
+        setErrorMessage(message)
+        setLocating(false)
+      }, { enableHighAccuracy: false, timeout: 30000, maximumAge: 120000 })
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Could not start location access. Check this site's browser permissions.")
       setLocating(false)
-    }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 })
+    }
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -242,7 +253,7 @@ export default function AddChargerPage() {
                 <div className="mt-4 h-[360px] overflow-hidden rounded-2xl border border-slate-200">
                   <Map
                     {...mapViewState}
-                    mapStyle="https://tiles.openfreemap.org/styles/liberty"
+                    mapStyle={MAP_STYLE}
                     onClick={(event) => void setSelectedLocation(event.lngLat.lat, event.lngLat.lng)}
                     onMove={(event) => setMapViewState({
                       latitude: event.viewState.latitude,

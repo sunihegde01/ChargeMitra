@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import Map, { Marker, NavigationControl } from 'react-map-gl/maplibre'
 import 'maplibre-gl/dist/maplibre-gl.css'
+import { MAP_STYLE } from '../mapStyle'
 
 type ChargerPin = {
   id: string
@@ -25,7 +26,7 @@ export function ChargerMap({ chargers, center, userLocation }: {
     <Map
       initialViewState={initialViewState}
       style={{ width: '100%', height: '500px', borderRadius: '0.75rem' }}
-      mapStyle="https://tiles.openfreemap.org/styles/liberty"
+      mapStyle={MAP_STYLE}
     >
       <NavigationControl position="top-right" />
       {chargers.map((charger) => (

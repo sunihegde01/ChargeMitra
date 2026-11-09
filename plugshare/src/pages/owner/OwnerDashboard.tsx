@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { FormEvent } from 'react'
+import type { FormEvent, KeyboardEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../supabase'
@@ -25,22 +25,96 @@ type Booking = {
 type Charger = { id: string; name: string }
 type SessionLink = { id: string; booking_id: string }
 
-const vehicleModelsByBrand: Record<string, string[]> = {
-  'Audi': ['Q4 e-tron', 'Q6 e-tron', 'Q8 e-tron', 'e-tron GT'],
-  'BMW': ['i4', 'i5', 'i7', 'iX', 'iX1'],
-  'BYD': ['Atto 3', 'e6', 'eMAX 7', 'Seal', 'Sealion 7'],
-  'Citroen': ['eC3'],
-  'Hyundai': ['Creta Electric', 'IONIQ 5', 'IONIQ 6', 'Kona Electric'],
-  'Kia': ['Carens Clavis EV', 'EV6', 'EV9'],
-  'Mahindra': ['BE 6', 'XEV 9e', 'XUV400 EV'],
-  'Maruti Suzuki': ['e Vitara'],
-  'Mercedes-Benz': ['EQA', 'EQB', 'EQE SUV', 'EQS SUV'],
-  'MG': ['Comet EV', 'Cyberster', 'Windsor EV', 'ZS EV'],
-  'Porsche': ['Macan Electric', 'Taycan'],
-  'Tata Motors': ['Curvv EV', 'Harrier EV', 'Nexon EV', 'Punch EV', 'Tiago EV', 'Tigor EV'],
-  'Tesla': ['Model 3', 'Model S', 'Model X', 'Model Y'],
-  'VinFast': ['VF 6', 'VF 7'],
-  'Volvo': ['EX30', 'EX40', 'EX90'],
+type VehicleModelSpec = {
+  model: string
+  batteryKwh: number
+  maxAcKw: number
+  maxDcKw: number
+  connectors: string[]
+}
+
+const vehicleModelsByBrand: Record<string, VehicleModelSpec[]> = {
+  Audi: [
+    { model: 'Q4 e-tron', batteryKwh: 77, maxAcKw: 11, maxDcKw: 175, connectors: ['Type 2', 'CCS2'] },
+    { model: 'Q6 e-tron', batteryKwh: 94.9, maxAcKw: 11, maxDcKw: 270, connectors: ['Type 2', 'CCS2'] },
+    { model: 'Q8 e-tron', batteryKwh: 114, maxAcKw: 11, maxDcKw: 170, connectors: ['Type 2', 'CCS2'] },
+    { model: 'e-tron GT', batteryKwh: 93.4, maxAcKw: 11, maxDcKw: 270, connectors: ['Type 2', 'CCS2'] },
+  ],
+  BMW: [
+    { model: 'i4', batteryKwh: 83.9, maxAcKw: 11, maxDcKw: 205, connectors: ['Type 2', 'CCS2'] },
+    { model: 'i5', batteryKwh: 81.2, maxAcKw: 11, maxDcKw: 205, connectors: ['Type 2', 'CCS2'] },
+    { model: 'i7', batteryKwh: 101.7, maxAcKw: 11, maxDcKw: 195, connectors: ['Type 2', 'CCS2'] },
+    { model: 'iX', batteryKwh: 111.5, maxAcKw: 11, maxDcKw: 195, connectors: ['Type 2', 'CCS2'] },
+    { model: 'iX1', batteryKwh: 66.4, maxAcKw: 11, maxDcKw: 130, connectors: ['Type 2', 'CCS2'] },
+  ],
+  BYD: [
+    { model: 'Atto 3', batteryKwh: 60.5, maxAcKw: 7, maxDcKw: 80, connectors: ['Type 2', 'CCS2'] },
+    { model: 'e6', batteryKwh: 71.7, maxAcKw: 6.6, maxDcKw: 60, connectors: ['Type 2', 'CCS2'] },
+    { model: 'eMAX 7', batteryKwh: 55.4, maxAcKw: 7, maxDcKw: 115, connectors: ['Type 2', 'CCS2'] },
+    { model: 'Seal', batteryKwh: 82.5, maxAcKw: 11, maxDcKw: 150, connectors: ['Type 2', 'CCS2'] },
+    { model: 'Sealion 7', batteryKwh: 82.5, maxAcKw: 11, maxDcKw: 150, connectors: ['Type 2', 'CCS2'] },
+  ],
+  Citroen: [
+    { model: 'eC3', batteryKwh: 29.2, maxAcKw: 7.2, maxDcKw: 30, connectors: ['Type 2', 'CCS2'] },
+  ],
+  Hyundai: [
+    { model: 'Creta Electric', batteryKwh: 42, maxAcKw: 11, maxDcKw: 100, connectors: ['Type 2', 'CCS2'] },
+    { model: 'IONIQ 5', batteryKwh: 72.6, maxAcKw: 11, maxDcKw: 220, connectors: ['Type 2', 'CCS2'] },
+    { model: 'IONIQ 6', batteryKwh: 77.4, maxAcKw: 11, maxDcKw: 230, connectors: ['Type 2', 'CCS2'] },
+    { model: 'Kona Electric', batteryKwh: 64, maxAcKw: 11, maxDcKw: 100, connectors: ['Type 2', 'CCS2'] },
+  ],
+  Kia: [
+    { model: 'Carens Clavis EV', batteryKwh: 51.4, maxAcKw: 11, maxDcKw: 100, connectors: ['Type 2', 'CCS2'] },
+    { model: 'EV6', batteryKwh: 77.4, maxAcKw: 11, maxDcKw: 240, connectors: ['Type 2', 'CCS2'] },
+    { model: 'EV9', batteryKwh: 99.8, maxAcKw: 11, maxDcKw: 210, connectors: ['Type 2', 'CCS2'] },
+  ],
+  Mahindra: [
+    { model: 'BE 6', batteryKwh: 59, maxAcKw: 11, maxDcKw: 140, connectors: ['Type 2', 'CCS2'] },
+    { model: 'XEV 9e', batteryKwh: 59, maxAcKw: 11, maxDcKw: 140, connectors: ['Type 2', 'CCS2'] },
+    { model: 'XUV400 EV', batteryKwh: 39.4, maxAcKw: 7.2, maxDcKw: 50, connectors: ['Type 2', 'CCS2'] },
+  ],
+  'Maruti Suzuki': [
+    { model: 'e Vitara', batteryKwh: 61, maxAcKw: 7.2, maxDcKw: 70, connectors: ['Type 2', 'CCS2'] },
+  ],
+  'Mercedes-Benz': [
+    { model: 'EQA', batteryKwh: 70.5, maxAcKw: 11, maxDcKw: 100, connectors: ['Type 2', 'CCS2'] },
+    { model: 'EQB', batteryKwh: 70.5, maxAcKw: 11, maxDcKw: 100, connectors: ['Type 2', 'CCS2'] },
+    { model: 'EQE SUV', batteryKwh: 90.6, maxAcKw: 11, maxDcKw: 170, connectors: ['Type 2', 'CCS2'] },
+    { model: 'EQS SUV', batteryKwh: 108.4, maxAcKw: 11, maxDcKw: 200, connectors: ['Type 2', 'CCS2'] },
+  ],
+  MG: [
+    { model: 'Comet EV', batteryKwh: 17.3, maxAcKw: 3.3, maxDcKw: 0, connectors: ['Type 2'] },
+    { model: 'Cyberster', batteryKwh: 77, maxAcKw: 11, maxDcKw: 144, connectors: ['Type 2', 'CCS2'] },
+    { model: 'Windsor EV', batteryKwh: 38, maxAcKw: 7.4, maxDcKw: 45, connectors: ['Type 2', 'CCS2'] },
+    { model: 'ZS EV', batteryKwh: 50.3, maxAcKw: 7.4, maxDcKw: 50, connectors: ['Type 2', 'CCS2'] },
+  ],
+  Porsche: [
+    { model: 'Macan Electric', batteryKwh: 95, maxAcKw: 11, maxDcKw: 270, connectors: ['Type 2', 'CCS2'] },
+    { model: 'Taycan', batteryKwh: 93.4, maxAcKw: 11, maxDcKw: 270, connectors: ['Type 2', 'CCS2'] },
+  ],
+  'Tata Motors': [
+    { model: 'Curvv EV', batteryKwh: 55, maxAcKw: 7.2, maxDcKw: 70, connectors: ['Type 2', 'CCS2'] },
+    { model: 'Harrier EV', batteryKwh: 65, maxAcKw: 7.2, maxDcKw: 120, connectors: ['Type 2', 'CCS2'] },
+    { model: 'Nexon EV', batteryKwh: 45, maxAcKw: 7.2, maxDcKw: 60, connectors: ['Type 2', 'CCS2'] },
+    { model: 'Punch EV', batteryKwh: 35, maxAcKw: 7.2, maxDcKw: 50, connectors: ['Type 2', 'CCS2'] },
+    { model: 'Tiago EV', batteryKwh: 24, maxAcKw: 7.2, maxDcKw: 50, connectors: ['Type 2', 'CCS2'] },
+    { model: 'Tigor EV', batteryKwh: 26, maxAcKw: 7.2, maxDcKw: 25, connectors: ['Type 2', 'CCS2'] },
+  ],
+  Tesla: [
+    { model: 'Model 3', batteryKwh: 75, maxAcKw: 11, maxDcKw: 250, connectors: ['Type 2', 'CCS2'] },
+    { model: 'Model S', batteryKwh: 100, maxAcKw: 11, maxDcKw: 250, connectors: ['Type 2', 'CCS2'] },
+    { model: 'Model X', batteryKwh: 100, maxAcKw: 11, maxDcKw: 250, connectors: ['Type 2', 'CCS2'] },
+    { model: 'Model Y', batteryKwh: 75, maxAcKw: 11, maxDcKw: 250, connectors: ['Type 2', 'CCS2'] },
+  ],
+  VinFast: [
+    { model: 'VF 6', batteryKwh: 59.6, maxAcKw: 11, maxDcKw: 100, connectors: ['Type 2', 'CCS2'] },
+    { model: 'VF 7', batteryKwh: 75.3, maxAcKw: 11, maxDcKw: 150, connectors: ['Type 2', 'CCS2'] },
+  ],
+  Volvo: [
+    { model: 'EX30', batteryKwh: 69, maxAcKw: 11, maxDcKw: 153, connectors: ['Type 2', 'CCS2'] },
+    { model: 'EX40', batteryKwh: 78, maxAcKw: 11, maxDcKw: 200, connectors: ['Type 2', 'CCS2'] },
+    { model: 'EX90', batteryKwh: 107, maxAcKw: 11, maxDcKw: 250, connectors: ['Type 2', 'CCS2'] },
+  ],
 }
 
 const fieldClass = 'w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-emerald-700 focus:ring-2 focus:ring-emerald-700/15'
@@ -61,13 +135,78 @@ export default function OwnerDashboard() {
   const [maxAc, setMaxAc] = useState('')
   const [maxDc, setMaxDc] = useState('')
   const [connectors, setConnectors] = useState('Type 2, CCS2')
+  const [companyOptionsOpen, setCompanyOptionsOpen] = useState(false)
+  const [modelOptionsOpen, setModelOptionsOpen] = useState(false)
+  const [activeCompanyOption, setActiveCompanyOption] = useState(0)
+  const [activeModelOption, setActiveModelOption] = useState(0)
   const brandSuggestions = Object.keys(vehicleModelsByBrand).filter((company) =>
     !brand.trim() || company.toLowerCase().startsWith(brand.trim().toLowerCase()),
   )
   const matchingBrand = Object.keys(vehicleModelsByBrand).find((company) =>
     company.toLowerCase() === brand.trim().toLowerCase(),
   )
-  const modelSuggestions = matchingBrand ? vehicleModelsByBrand[matchingBrand] : []
+  const modelSuggestions = matchingBrand
+    ? vehicleModelsByBrand[matchingBrand].filter((vehicle) =>
+      vehicle.model.toLowerCase().includes(model.trim().toLowerCase()),
+    )
+    : []
+
+  function chooseCompany(company: string) {
+    setBrand(company)
+    setModel('')
+    setBattery('')
+    setMaxAc('')
+    setMaxDc('')
+    setConnectors('')
+    setCompanyOptionsOpen(false)
+    setModelOptionsOpen(false)
+    setActiveModelOption(0)
+  }
+
+  function chooseModel(vehicle: VehicleModelSpec) {
+    setModel(vehicle.model)
+    setBattery(String(vehicle.batteryKwh))
+    setMaxAc(String(vehicle.maxAcKw))
+    setMaxDc(String(vehicle.maxDcKw))
+    setConnectors(vehicle.connectors.join(', '))
+    setModelOptionsOpen(false)
+  }
+
+  function handleCompanyKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === 'ArrowDown' && brandSuggestions.length) {
+      event.preventDefault()
+      setCompanyOptionsOpen(true)
+      setActiveCompanyOption((index) => (index + 1) % brandSuggestions.length)
+    } else if (event.key === 'ArrowUp' && brandSuggestions.length) {
+      event.preventDefault()
+      setCompanyOptionsOpen(true)
+      setActiveCompanyOption((index) => (index - 1 + brandSuggestions.length) % brandSuggestions.length)
+    } else if (event.key === 'Enter') {
+      event.preventDefault()
+      const company = brandSuggestions[activeCompanyOption]
+      if (company) chooseCompany(company)
+    } else if (event.key === 'Escape') {
+      setCompanyOptionsOpen(false)
+    }
+  }
+
+  function handleModelKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === 'ArrowDown' && modelSuggestions.length) {
+      event.preventDefault()
+      setModelOptionsOpen(true)
+      setActiveModelOption((index) => (index + 1) % modelSuggestions.length)
+    } else if (event.key === 'ArrowUp' && modelSuggestions.length) {
+      event.preventDefault()
+      setModelOptionsOpen(true)
+      setActiveModelOption((index) => (index - 1 + modelSuggestions.length) % modelSuggestions.length)
+    } else if (event.key === 'Enter') {
+      event.preventDefault()
+      const vehicle = modelSuggestions[activeModelOption]
+      if (vehicle) chooseModel(vehicle)
+    } else if (event.key === 'Escape') {
+      setModelOptionsOpen(false)
+    }
+  }
 
   const loadDashboard = useCallback(async () => {
     if (!user) return
@@ -159,6 +298,7 @@ export default function OwnerDashboard() {
       setBattery('')
       setMaxAc('')
       setMaxDc('')
+      setConnectors('')
       setSuccessMessage('Vehicle added.')
       await loadDashboard()
     }
@@ -199,23 +339,113 @@ export default function OwnerDashboard() {
 
             <form className="mt-6 grid gap-3 border-t border-slate-100 pt-6 sm:grid-cols-2" onSubmit={addVehicle}>
               <h3 className="font-semibold sm:col-span-2">Add your car</h3>
-              <label className="grid gap-1 text-sm font-medium text-slate-700">
+              <label className="relative grid gap-1 text-sm font-medium text-slate-700">
                 Company
-                <input aria-label="Vehicle company" autoComplete="off" className={fieldClass} list="vehicle-company-options" placeholder="Start typing a company name" required value={brand} onChange={(event) => { setBrand(event.target.value); setModel('') }} />
-                <datalist id="vehicle-company-options">
-                  {brandSuggestions.map((company) => <option key={company} value={company} />)}
-                </datalist>
+                <input
+                  aria-activedescendant={companyOptionsOpen ? `company-option-${activeCompanyOption}` : undefined}
+                  aria-autocomplete="list"
+                  aria-controls="vehicle-company-options"
+                  aria-expanded={companyOptionsOpen && brandSuggestions.length > 0}
+                  aria-label="Vehicle company"
+                  autoComplete="off"
+                  className={fieldClass}
+                  onBlur={() => setCompanyOptionsOpen(false)}
+                  onChange={(event) => {
+                    setBrand(event.target.value)
+                    setModel('')
+                    setBattery('')
+                    setMaxAc('')
+                    setMaxDc('')
+                    setConnectors('')
+                    setActiveCompanyOption(0)
+                    setCompanyOptionsOpen(true)
+                  }}
+                  onFocus={() => setCompanyOptionsOpen(true)}
+                  onKeyDown={handleCompanyKeyDown}
+                  placeholder="Start typing a company name"
+                  required
+                  role="combobox"
+                  value={brand}
+                />
+                {companyOptionsOpen && brandSuggestions.length > 0 && (
+                  <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-48 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-lg" id="vehicle-company-options" role="listbox">
+                    {brandSuggestions.map((company, index) => (
+                      <button
+                        aria-selected={index === activeCompanyOption}
+                        className={`block w-full rounded-lg px-3 py-2 text-left text-sm ${index === activeCompanyOption ? 'bg-emerald-50 text-emerald-900' : 'hover:bg-slate-50'}`}
+                        id={`company-option-${index}`}
+                        key={company}
+                        onClick={() => chooseCompany(company)}
+                        onMouseDown={(event) => event.preventDefault()}
+                        role="option"
+                        type="button"
+                      >
+                        {company}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </label>
+              <label className="relative grid gap-1 text-sm font-medium text-slate-700">
+                Car model
+                <input
+                  aria-activedescendant={modelOptionsOpen ? `model-option-${activeModelOption}` : undefined}
+                  aria-autocomplete="list"
+                  aria-controls="vehicle-model-options"
+                  aria-expanded={modelOptionsOpen && modelSuggestions.length > 0}
+                  aria-label="Vehicle model"
+                  autoComplete="off"
+                  className={fieldClass}
+                  onBlur={() => setModelOptionsOpen(false)}
+                  onChange={(event) => {
+                    const nextModel = event.target.value
+                    setModel(nextModel)
+                    setActiveModelOption(0)
+                    setModelOptionsOpen(true)
+                    const exactMatch = matchingBrand
+                      ? vehicleModelsByBrand[matchingBrand].find((vehicle) => vehicle.model.toLowerCase() === nextModel.trim().toLowerCase())
+                      : undefined
+                    if (exactMatch) chooseModel(exactMatch)
+                  }}
+                  onFocus={() => setModelOptionsOpen(true)}
+                  onKeyDown={handleModelKeyDown}
+                  placeholder={matchingBrand ? 'Choose or type a model' : 'Enter a company to see model suggestions'}
+                  required
+                  role="combobox"
+                  value={model}
+                />
+                {modelOptionsOpen && modelSuggestions.length > 0 && (
+                  <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-48 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-lg" id="vehicle-model-options" role="listbox">
+                    {modelSuggestions.map((vehicle, index) => (
+                      <button
+                        aria-selected={index === activeModelOption}
+                        className={`block w-full rounded-lg px-3 py-2 text-left text-sm ${index === activeModelOption ? 'bg-emerald-50 text-emerald-900' : 'hover:bg-slate-50'}`}
+                        id={`model-option-${index}`}
+                        key={vehicle.model}
+                        onClick={() => chooseModel(vehicle)}
+                        onMouseDown={(event) => event.preventDefault()}
+                        role="option"
+                        type="button"
+                      >
+                        {vehicle.model} · {vehicle.batteryKwh} kWh
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </label>
+              <p className="text-xs text-slate-500 sm:col-span-2">Choosing a model fills typical specifications. Values can vary by year and trim, so check and edit them for your car.</p>
+              <label className="grid gap-1 text-sm font-medium text-slate-700">
+                Usable battery (kWh)
+                <input aria-label="Usable battery in kWh" className={fieldClass} min="0.1" placeholder="Battery capacity" required type="number" step="0.1" value={battery} onChange={(event) => setBattery(event.target.value)} />
               </label>
               <label className="grid gap-1 text-sm font-medium text-slate-700">
-                Car model
-                <input aria-label="Vehicle model" autoComplete="off" className={fieldClass} list="vehicle-model-options" placeholder={matchingBrand ? 'Choose or type a model' : 'Enter a company to see model suggestions'} required value={model} onChange={(event) => setModel(event.target.value)} />
-                <datalist id="vehicle-model-options">
-                  {modelSuggestions.map((vehicleModel) => <option key={vehicleModel} value={vehicleModel} />)}
-                </datalist>
+                Maximum AC charging power (kW)
+                <input aria-label="Maximum AC power in kW" className={fieldClass} min="0.1" placeholder="Max AC power" required type="number" step="0.1" value={maxAc} onChange={(event) => setMaxAc(event.target.value)} />
               </label>
-              <input aria-label="Usable battery in kWh" className={fieldClass} min="0.1" placeholder="Battery (kWh)" required type="number" step="0.1" value={battery} onChange={(event) => setBattery(event.target.value)} />
-              <input aria-label="Maximum AC power in kW" className={fieldClass} min="0.1" placeholder="Max AC (kW)" required type="number" step="0.1" value={maxAc} onChange={(event) => setMaxAc(event.target.value)} />
-              <input aria-label="Maximum DC power in kW" className={fieldClass} min="0.1" placeholder="Max DC (kW)" required type="number" step="0.1" value={maxDc} onChange={(event) => setMaxDc(event.target.value)} />
+              <label className="grid gap-1 text-sm font-medium text-slate-700">
+                Maximum DC charging power (kW)
+                <input aria-label="Maximum DC power in kW" className={fieldClass} min="0" placeholder="Enter 0 if unsupported" required type="number" step="0.1" value={maxDc} onChange={(event) => setMaxDc(event.target.value)} />
+              </label>
               <input aria-label="Connector types, separated by commas" className={fieldClass} placeholder="Connectors, comma separated" required value={connectors} onChange={(event) => setConnectors(event.target.value)} />
               <button className="rounded-full bg-slate-900 px-5 py-3 font-semibold text-white disabled:opacity-60 sm:col-span-2" disabled={saving} type="submit">{saving ? 'Saving...' : 'Add car'}</button>
             </form>

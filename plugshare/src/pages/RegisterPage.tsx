@@ -29,21 +29,10 @@ export default function RegisterPage() {
 
       if (error) {
         setErrorMessage(error.message)
+      } else if (data.user && !data.session) {
+        setSuccessMessage('Check your email to confirm your account.')
       } else if (data.user) {
-        const { error: profileError } = await supabase.from('profiles').insert({
-          id: data.user.id,
-          full_name: name,
-          phone,
-          role: 'EV_OWNER',
-        })
-
-        if (profileError) {
-          setErrorMessage(`Your account was created, but your profile could not be saved: ${profileError.message}`)
-        } else if (!data.session) {
-          setSuccessMessage('Check your email to confirm your account.')
-        } else {
-          setSuccessMessage('Your account has been created.')
-        }
+        setSuccessMessage('Your account has been created.')
       } else {
         setErrorMessage('Sign-up completed without returning a user. Please try again.')
       }
@@ -59,6 +48,9 @@ export default function RegisterPage() {
   return (
     <main className="mx-auto max-w-md p-8">
       <h1 className="mb-6 text-2xl font-semibold">Create an account</h1>
+      <p className="mb-5 rounded-xl bg-amber-50 p-4 text-sm text-amber-900">
+        Before registering, run <code>supabase-fix.sql</code> from the project in your Supabase SQL Editor to enable profile creation.
+      </p>
       <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
         <label className="flex flex-col gap-1">
           Full name

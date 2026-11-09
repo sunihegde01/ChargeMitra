@@ -63,6 +63,7 @@ export default function FindChargerPage() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [addressSearch, setAddressSearch] = useState('')
   const [searchCenter, setSearchCenter] = useState<Point>({ lat: 20.5937, lng: 78.9629 })
   const [userLocation, setUserLocation] = useState<Point | null>(null)
   const [locating, setLocating] = useState(false)
@@ -123,7 +124,7 @@ export default function FindChargerPage() {
 
   async function searchAddress(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const term = search.trim()
+    const term = addressSearch.trim()
     if (!term) return
     setErrorMessage('')
     try {
@@ -237,13 +238,28 @@ export default function FindChargerPage() {
           </div>
         </header>
 
-        <form className="mt-7 flex flex-col gap-3 sm:flex-row" onSubmit={searchAddress}>
-          <input className={`${fieldClass} min-w-0 flex-1`} onChange={(event) => setSearch(event.target.value)} placeholder="Search station, connector, or address" value={search} />
-          <button className="rounded-full bg-slate-900 px-6 py-3 font-semibold text-white" type="submit">Search address</button>
-          <button className="rounded-full border border-emerald-700 px-6 py-3 font-semibold text-emerald-800 disabled:cursor-wait disabled:opacity-60" disabled={locating} onClick={useMyLocation} type="button">
-            {locating ? 'Finding you...' : 'Use my location'}
-          </button>
-        </form>
+        <div className="mt-7 grid gap-3">
+          <form className="flex flex-col gap-3 sm:flex-row" onSubmit={searchAddress}>
+            <input
+              aria-label="Search map area"
+              className={`${fieldClass} min-w-0 flex-1`}
+              onChange={(event) => setAddressSearch(event.target.value)}
+              placeholder="Enter an area or address to center the map"
+              value={addressSearch}
+            />
+            <button className="rounded-full bg-slate-900 px-6 py-3 font-semibold text-white" type="submit">Search area</button>
+            <button className="rounded-full border border-emerald-700 px-6 py-3 font-semibold text-emerald-800 disabled:cursor-wait disabled:opacity-60" disabled={locating} onClick={useMyLocation} type="button">
+              {locating ? 'Finding you...' : 'Use my location'}
+            </button>
+          </form>
+          <input
+            aria-label="Filter charging points"
+            className={fieldClass}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Filter charging points by station, connector, or host"
+            value={search}
+          />
+        </div>
 
         {errorMessage && <p className="mt-5 rounded-xl bg-red-50 p-4 text-red-800" role="alert">{errorMessage}</p>}
         {successMessage && <p className="mt-5 rounded-xl bg-emerald-50 p-4 text-emerald-800" role="status">{successMessage}</p>}

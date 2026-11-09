@@ -317,9 +317,10 @@ export default function AddChargerPage() {
                   <NavigationControl position="top-right" />
                   {latitude && longitude && (
                     <Marker anchor="bottom" latitude={Number(latitude)} longitude={Number(longitude)}>
-                      <div className="rounded-full bg-emerald-700 px-3 py-2 text-sm font-semibold text-white shadow-lg">
-                        Charger location
-                      </div>
+                      <svg aria-label="Selected charger location" className="h-10 w-8 drop-shadow-md" role="img" viewBox="0 0 32 44">
+                        <path d="M16 1C7.72 1 1 7.72 1 16c0 10.4 15 27 15 27s15-16.6 15-27C31 7.72 24.28 1 16 1Z" fill="#facc15" stroke="#854d0e" strokeWidth="2" />
+                        <circle cx="16" cy="16" r="5" fill="#854d0e" />
+                      </svg>
                     </Marker>
                   )}
                 </Map>

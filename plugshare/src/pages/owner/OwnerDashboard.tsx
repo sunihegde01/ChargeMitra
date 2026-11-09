@@ -25,6 +25,24 @@ type Booking = {
 type Charger = { id: string; name: string }
 type SessionLink = { id: string; booking_id: string }
 
+const vehicleModelsByBrand: Record<string, string[]> = {
+  'Audi': ['Q4 e-tron', 'Q6 e-tron', 'Q8 e-tron', 'e-tron GT'],
+  'BMW': ['i4', 'i5', 'i7', 'iX', 'iX1'],
+  'BYD': ['Atto 3', 'e6', 'eMAX 7', 'Seal', 'Sealion 7'],
+  'Citroen': ['eC3'],
+  'Hyundai': ['Creta Electric', 'IONIQ 5', 'IONIQ 6', 'Kona Electric'],
+  'Kia': ['Carens Clavis EV', 'EV6', 'EV9'],
+  'Mahindra': ['BE 6', 'XEV 9e', 'XUV400 EV'],
+  'Maruti Suzuki': ['e Vitara'],
+  'Mercedes-Benz': ['EQA', 'EQB', 'EQE SUV', 'EQS SUV'],
+  'MG': ['Comet EV', 'Cyberster', 'Windsor EV', 'ZS EV'],
+  'Porsche': ['Macan Electric', 'Taycan'],
+  'Tata Motors': ['Curvv EV', 'Harrier EV', 'Nexon EV', 'Punch EV', 'Tiago EV', 'Tigor EV'],
+  'Tesla': ['Model 3', 'Model S', 'Model X', 'Model Y'],
+  'VinFast': ['VF 6', 'VF 7'],
+  'Volvo': ['EX30', 'EX40', 'EX90'],
+}
+
 const fieldClass = 'w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-emerald-700 focus:ring-2 focus:ring-emerald-700/15'
 
 export default function OwnerDashboard() {
@@ -43,6 +61,13 @@ export default function OwnerDashboard() {
   const [maxAc, setMaxAc] = useState('')
   const [maxDc, setMaxDc] = useState('')
   const [connectors, setConnectors] = useState('Type 2, CCS2')
+  const brandSuggestions = Object.keys(vehicleModelsByBrand).filter((company) =>
+    !brand.trim() || company.toLowerCase().startsWith(brand.trim().toLowerCase()),
+  )
+  const matchingBrand = Object.keys(vehicleModelsByBrand).find((company) =>
+    company.toLowerCase() === brand.trim().toLowerCase(),
+  )
+  const modelSuggestions = matchingBrand ? vehicleModelsByBrand[matchingBrand] : []
 
   const loadDashboard = useCallback(async () => {
     if (!user) return
@@ -146,7 +171,7 @@ export default function OwnerDashboard() {
         <header className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <Link className="text-sm font-semibold text-emerald-700" to="/">ChargeMitra</Link>
-            <h1 className="mt-3 text-3xl font-semibold">Owner dashboard</h1>
+            <h1 className="mt-3 text-3xl font-semibold">User dashboard</h1>
             <p className="mt-1 text-slate-600">Manage your vehicles and charging bookings.</p>
           </div>
           <div className="flex gap-3">
@@ -160,7 +185,7 @@ export default function OwnerDashboard() {
 
         <section className="mt-8 grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
           <div className="rounded-3xl border border-slate-200 bg-white p-6">
-            <h2 className="text-xl font-semibold">Your vehicles</h2>
+            <h2 className="text-xl font-semibold">Your EVs</h2>
             {loading ? <p className="mt-4 text-slate-600">Loading vehicles...</p> : vehicles.length ? (
               <ul className="mt-4 divide-y divide-slate-100">
                 {vehicles.map((vehicle) => (
@@ -170,17 +195,29 @@ export default function OwnerDashboard() {
                   </li>
                 ))}
               </ul>
-            ) : <p className="mt-4 text-slate-600">Add a vehicle to start booking chargers.</p>}
+            ) : <p className="mt-4 text-slate-600">Add your car to start booking chargers.</p>}
 
             <form className="mt-6 grid gap-3 border-t border-slate-100 pt-6 sm:grid-cols-2" onSubmit={addVehicle}>
-              <h3 className="font-semibold sm:col-span-2">Add a vehicle</h3>
-              <input aria-label="Vehicle brand" className={fieldClass} placeholder="Brand" required value={brand} onChange={(event) => setBrand(event.target.value)} />
-              <input aria-label="Vehicle model" className={fieldClass} placeholder="Model" required value={model} onChange={(event) => setModel(event.target.value)} />
+              <h3 className="font-semibold sm:col-span-2">Add your car</h3>
+              <label className="grid gap-1 text-sm font-medium text-slate-700">
+                Company
+                <input aria-label="Vehicle company" autoComplete="off" className={fieldClass} list="vehicle-company-options" placeholder="Start typing a company name" required value={brand} onChange={(event) => { setBrand(event.target.value); setModel('') }} />
+                <datalist id="vehicle-company-options">
+                  {brandSuggestions.map((company) => <option key={company} value={company} />)}
+                </datalist>
+              </label>
+              <label className="grid gap-1 text-sm font-medium text-slate-700">
+                Car model
+                <input aria-label="Vehicle model" autoComplete="off" className={fieldClass} list="vehicle-model-options" placeholder={matchingBrand ? 'Choose or type a model' : 'Enter a company to see model suggestions'} required value={model} onChange={(event) => setModel(event.target.value)} />
+                <datalist id="vehicle-model-options">
+                  {modelSuggestions.map((vehicleModel) => <option key={vehicleModel} value={vehicleModel} />)}
+                </datalist>
+              </label>
               <input aria-label="Usable battery in kWh" className={fieldClass} min="0.1" placeholder="Battery (kWh)" required type="number" step="0.1" value={battery} onChange={(event) => setBattery(event.target.value)} />
               <input aria-label="Maximum AC power in kW" className={fieldClass} min="0.1" placeholder="Max AC (kW)" required type="number" step="0.1" value={maxAc} onChange={(event) => setMaxAc(event.target.value)} />
               <input aria-label="Maximum DC power in kW" className={fieldClass} min="0.1" placeholder="Max DC (kW)" required type="number" step="0.1" value={maxDc} onChange={(event) => setMaxDc(event.target.value)} />
               <input aria-label="Connector types, separated by commas" className={fieldClass} placeholder="Connectors, comma separated" required value={connectors} onChange={(event) => setConnectors(event.target.value)} />
-              <button className="rounded-full bg-slate-900 px-5 py-3 font-semibold text-white disabled:opacity-60 sm:col-span-2" disabled={saving} type="submit">{saving ? 'Saving...' : 'Add vehicle'}</button>
+              <button className="rounded-full bg-slate-900 px-5 py-3 font-semibold text-white disabled:opacity-60 sm:col-span-2" disabled={saving} type="submit">{saving ? 'Saving...' : 'Add car'}</button>
             </form>
           </div>
 

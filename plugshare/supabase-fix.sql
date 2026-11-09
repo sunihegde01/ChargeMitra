@@ -42,6 +42,17 @@ select
 from auth.users
 on conflict (id) do nothing;
 
+alter table public.bookings
+  drop constraint if exists no_overlap;
+
+alter table public.bookings
+  add constraint no_overlap
+  exclude using gist (
+    charger_id with =,
+    tstzrange(scheduled_start, scheduled_end) with &&
+  )
+  where (status in ('PENDING', 'ACCEPTED'));
+
 drop policy if exists "Providers update pending booking status" on public.bookings;
 create policy "Providers update pending booking status"
   on public.bookings

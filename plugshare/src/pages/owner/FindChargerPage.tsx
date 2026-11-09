@@ -47,6 +47,15 @@ function parsePoint(location: unknown): Point | null {
   return null
 }
 
+function distanceInKm(from: Point, to: Point): number {
+  const radians = (degrees: number) => degrees * Math.PI / 180
+  const latitudeDifference = radians(to.lat - from.lat)
+  const longitudeDifference = radians(to.lng - from.lng)
+  const haversine = Math.sin(latitudeDifference / 2) ** 2
+    + Math.cos(radians(from.lat)) * Math.cos(radians(to.lat)) * Math.sin(longitudeDifference / 2) ** 2
+  return 6371 * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine))
+}
+
 export default function FindChargerPage() {
   const { user } = useAuth()
   const [chargers, setChargers] = useState<Charger[]>([])
@@ -55,6 +64,8 @@ export default function FindChargerPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [searchCenter, setSearchCenter] = useState<Point>({ lat: 20.5937, lng: 78.9629 })
+  const [userLocation, setUserLocation] = useState<Point | null>(null)
+  const [locating, setLocating] = useState(false)
   const [vehicleId, setVehicleId] = useState('')
   const [startsAt, setStartsAt] = useState('')
   const [endsAt, setEndsAt] = useState('')
@@ -90,13 +101,21 @@ export default function FindChargerPage() {
 
   const visibleChargers = useMemo(() => {
     const term = search.trim().toLowerCase()
-    if (!term) return chargers
-    return chargers.filter((charger) => {
+    const matchesSearch = term ? chargers.filter((charger) => {
       const provider = providers.find((item) => item.id === charger.provider_id)
       return [charger.name, charger.charger_type, charger.connector_type, provider?.business_name, provider?.address]
         .some((value) => value?.toLowerCase().includes(term))
+    }) : chargers
+    return [...matchesSearch].sort((first, second) => {
+      const firstProvider = providers.find((item) => item.id === first.provider_id)
+      const secondProvider = providers.find((item) => item.id === second.provider_id)
+      const firstPoint = firstProvider ? parsePoint(firstProvider.location) : null
+      const secondPoint = secondProvider ? parsePoint(secondProvider.location) : null
+      const firstDistance = firstPoint ? distanceInKm(searchCenter, firstPoint) : Number.POSITIVE_INFINITY
+      const secondDistance = secondPoint ? distanceInKm(searchCenter, secondPoint) : Number.POSITIVE_INFINITY
+      return firstDistance - secondDistance
     })
-  }, [chargers, providers, search])
+  }, [chargers, providers, search, searchCenter])
 
   const pins = useMemo(() => visibleChargers.flatMap((charger) => {
     const provider = providers.find((item) => item.id === charger.provider_id)
@@ -127,9 +146,39 @@ export default function FindChargerPage() {
         return
       }
       setSearchCenter({ lng: coordinates[0], lat: coordinates[1] })
+      setUserLocation(null)
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Address search failed.')
     }
+  }
+
+  function useMyLocation() {
+    setErrorMessage('')
+    if (!navigator.geolocation) {
+      setErrorMessage('Location access is not supported by this browser.')
+      return
+    }
+
+    setLocating(true)
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        const point = { lat: coords.latitude, lng: coords.longitude }
+        setSearchCenter(point)
+        setUserLocation(point)
+        setSearch('')
+        setLocating(false)
+      },
+      (error) => {
+        const message = error.code === error.PERMISSION_DENIED
+          ? 'Location permission was denied. Allow location access in your browser settings and try again.'
+          : error.code === error.TIMEOUT
+            ? 'Finding your location timed out. Please try again.'
+            : 'Your location could not be determined. Check that location services are enabled and try again.'
+        setErrorMessage(message)
+        setLocating(false)
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
+    )
   }
 
   async function bookCharger(event: FormEvent<HTMLFormElement>, charger: Charger) {
@@ -140,8 +189,8 @@ export default function FindChargerPage() {
     }
     const start = new Date(startsAt)
     const end = new Date(endsAt)
-    if (!startsAt || !endsAt || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
-      setErrorMessage('Choose a valid start and end time.')
+    if (!startsAt || !endsAt || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start <= new Date() || end <= start) {
+      setErrorMessage('Choose a future start time and an end time after it.')
       return
     }
 
@@ -158,8 +207,13 @@ export default function FindChargerPage() {
       price_per_kwh_snapshot: charger.price_per_kwh,
     })
 
-    if (error) setErrorMessage(error.message)
-    else setSuccessMessage(`Booking request sent to ${charger.name}.`)
+    if (error?.code === '23P01' || error?.message.includes('no_overlap')) {
+      setErrorMessage('This charger is already booked for part or all of that time. Choose another time slot or charger.')
+    } else if (error) {
+      setErrorMessage(error.message)
+    } else {
+      setSuccessMessage(`Booking request sent to ${charger.name}.`)
+    }
     setSavingId('')
   }
 
@@ -168,7 +222,7 @@ export default function FindChargerPage() {
       <div className="mx-auto max-w-6xl">
         <header className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <Link className="text-sm font-semibold text-emerald-700" to="/owner/dashboard">← Owner dashboard</Link>
+            <Link className="text-sm font-semibold text-emerald-700" to="/owner/dashboard">← User dashboard</Link>
             <h1 className="mt-3 text-3xl font-semibold">Find a charger</h1>
             <p className="mt-1 text-slate-600">Search stations, compare rates, and request a booking.</p>
           </div>
@@ -177,24 +231,32 @@ export default function FindChargerPage() {
         <form className="mt-7 flex flex-col gap-3 sm:flex-row" onSubmit={searchAddress}>
           <input className={`${fieldClass} min-w-0 flex-1`} onChange={(event) => setSearch(event.target.value)} placeholder="Search station, connector, or address" value={search} />
           <button className="rounded-full bg-slate-900 px-6 py-3 font-semibold text-white" type="submit">Search address</button>
+          <button className="rounded-full border border-emerald-700 px-6 py-3 font-semibold text-emerald-800 disabled:cursor-wait disabled:opacity-60" disabled={locating} onClick={useMyLocation} type="button">
+            {locating ? 'Finding you...' : 'Use my location'}
+          </button>
         </form>
 
         {errorMessage && <p className="mt-5 rounded-xl bg-red-50 p-4 text-red-800" role="alert">{errorMessage}</p>}
         {successMessage && <p className="mt-5 rounded-xl bg-emerald-50 p-4 text-emerald-800" role="status">{successMessage}</p>}
 
         <section className="mt-6 overflow-hidden rounded-3xl border border-slate-200 bg-white p-2">
-          <ChargerMap chargers={pins} center={searchCenter} key={`${searchCenter.lat},${searchCenter.lng}`} />
+          <ChargerMap chargers={pins} center={searchCenter} userLocation={userLocation} key={`${searchCenter.lat},${searchCenter.lng}`} />
         </section>
 
         <section className="mt-8">
           <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
-            <h2 className="text-xl font-semibold">Available stations</h2>
+            <div>
+              <h2 className="text-xl font-semibold">Nearest available charging points</h2>
+              <p className="mt-1 text-sm text-slate-600">Active stations are sorted by distance. Time-slot conflicts are checked when you request a booking.</p>
+            </div>
             {!vehicles.length && !loading && <Link className="text-sm font-semibold text-emerald-700 underline" to="/owner/dashboard">Add a vehicle to book</Link>}
           </div>
           {loading ? <p className="text-slate-600">Loading stations...</p> : visibleChargers.length ? (
             <div className="grid gap-4 lg:grid-cols-2">
               {visibleChargers.map((charger) => {
                 const provider = providers.find((item) => item.id === charger.provider_id)
+                const point = provider ? parsePoint(provider.location) : null
+                const distance = point ? distanceInKm(searchCenter, point) : null
                 return (
                   <article className="rounded-3xl border border-slate-200 bg-white p-6" key={charger.id}>
                     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -202,6 +264,7 @@ export default function FindChargerPage() {
                         <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">{charger.charger_type} charger · {charger.rated_power_kw} kW</p>
                         <h3 className="mt-2 text-xl font-semibold">{charger.name}</h3>
                         <p className="mt-1 text-slate-600">{provider?.business_name ?? 'Charging provider'}{provider?.address ? ` · ${provider.address}` : ''}</p>
+                        <p className="mt-2 text-sm font-medium text-emerald-800">{distance === null ? 'Distance unavailable' : `${distance.toFixed(1)} km away`}</p>
                         <p className="mt-2 text-sm text-slate-600">Connector: {charger.connector_type}</p>
                       </div>
                       <p className="rounded-full bg-emerald-50 px-4 py-2 font-semibold text-emerald-800">₹{charger.price_per_kwh}/kWh</p>
@@ -211,8 +274,16 @@ export default function FindChargerPage() {
                         <option value="">Select vehicle</option>
                         {vehicles.map((vehicle) => <option key={vehicle.id} value={vehicle.id}>{vehicle.brand} {vehicle.model}</option>)}
                       </select>
-                      <input aria-label="Booking start" className={fieldClass} onChange={(event) => setStartsAt(event.target.value)} required type="datetime-local" value={startsAt} />
-                      <input aria-label="Booking end" className={fieldClass} onChange={(event) => setEndsAt(event.target.value)} required type="datetime-local" value={endsAt} />
+                      <label className="grid gap-1 text-sm font-medium text-slate-700">
+                        Start date and time
+                        <span className="text-xs font-normal text-slate-500">When you want the charging session to begin.</span>
+                        <input aria-label="Start date and time" className={fieldClass} onChange={(event) => setStartsAt(event.target.value)} required type="datetime-local" value={startsAt} />
+                      </label>
+                      <label className="grid gap-1 text-sm font-medium text-slate-700">
+                        End date and time
+                        <span className="text-xs font-normal text-slate-500">When you expect the charging session to finish.</span>
+                        <input aria-label="End date and time" className={fieldClass} onChange={(event) => setEndsAt(event.target.value)} required type="datetime-local" value={endsAt} />
+                      </label>
                       <button className="rounded-full bg-emerald-700 px-5 py-3 font-semibold text-white disabled:opacity-60" disabled={!vehicles.length || savingId === charger.id} type="submit">
                         {savingId === charger.id ? 'Requesting...' : 'Request booking'}
                       </button>

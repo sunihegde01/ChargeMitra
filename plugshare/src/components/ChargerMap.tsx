@@ -10,9 +10,10 @@ type ChargerPin = {
   pricePerKwh: number
 }
 
-export function ChargerMap({ chargers, center }: {
+export function ChargerMap({ chargers, center, userLocation }: {
   chargers: ChargerPin[]
   center: { lat: number; lng: number }
+  userLocation?: { lat: number; lng: number } | null
 }) {
   const initialViewState = useMemo(() => ({
     latitude: center.lat,
@@ -42,6 +43,13 @@ export function ChargerMap({ chargers, center }: {
           </div>
         </Marker>
       ))}
+      {userLocation && (
+        <Marker latitude={userLocation.lat} longitude={userLocation.lng} anchor="center">
+          <div className="flex h-5 w-5 items-center justify-center rounded-full border-2 border-white bg-blue-600 shadow-md" title="Your location">
+            <span className="sr-only">Your location</span>
+          </div>
+        </Marker>
+      )}
     </Map>
   )
 }

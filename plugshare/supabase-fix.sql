@@ -4,13 +4,20 @@ language plpgsql
 security definer
 set search_path = ''
 as $$
+declare
+  v_role text;
 begin
+  v_role := new.raw_user_meta_data ->> 'role';
+  if v_role is null or v_role not in ('EV_OWNER', 'PROVIDER', 'BOTH') then
+    v_role := 'EV_OWNER';
+  end if;
+
   insert into public.profiles (id, full_name, phone, role)
   values (
     new.id,
     nullif(new.raw_user_meta_data ->> 'full_name', ''),
     nullif(new.raw_user_meta_data ->> 'phone', ''),
-    'EV_OWNER'
+    v_role
   )
   on conflict (id) do nothing;
   return new;
@@ -27,7 +34,11 @@ select
   id,
   nullif(raw_user_meta_data ->> 'full_name', ''),
   nullif(raw_user_meta_data ->> 'phone', ''),
-  'EV_OWNER'
+  case
+    when raw_user_meta_data ->> 'role' in ('EV_OWNER', 'PROVIDER', 'BOTH')
+      then raw_user_meta_data ->> 'role'
+    else 'EV_OWNER'
+  end
 from auth.users
 on conflict (id) do nothing;
 

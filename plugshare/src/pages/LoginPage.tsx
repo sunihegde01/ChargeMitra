@@ -1,10 +1,14 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../supabase'
 
 export default function LoginPage() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const [accountType, setAccountType] = useState<'owner' | 'host'>(
+    searchParams.get('type') === 'host' ? 'host' : 'owner',
+  )
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -37,9 +41,20 @@ export default function LoginPage() {
         return
       }
 
-      navigate(profile.role === 'PROVIDER' || profile.role === 'BOTH' ? '/provider/dashboard' : '/owner/dashboard', {
-        replace: true,
-      })
+      const canUseOwnerAccount = profile.role === 'EV_OWNER' || profile.role === 'BOTH'
+      const canUseProviderAccount = profile.role === 'PROVIDER' || profile.role === 'BOTH'
+      if (accountType === 'host' && !canUseProviderAccount) {
+        await supabase.auth.signOut()
+        setErrorMessage('This account is registered as an EV user. Choose EV user or create a charging host account.')
+        return
+      }
+      if (accountType === 'owner' && !canUseOwnerAccount) {
+        await supabase.auth.signOut()
+        setErrorMessage('This account is registered as a charging host. Choose charging host to continue.')
+        return
+      }
+
+      navigate(accountType === 'host' ? '/provider/dashboard' : '/owner/dashboard', { replace: true })
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : 'Unable to log in. Please try again.',
@@ -57,7 +72,29 @@ export default function LoginPage() {
           ← ChargeMitra
         </Link>
         <h1 className="mt-8 text-3xl font-semibold tracking-tight">Welcome back</h1>
-        <p className="mt-2 text-slate-600">Log in to continue to your ChargeMitra account.</p>
+        <p className="mt-2 text-slate-600">Choose how you use ChargeMitra, then log in.</p>
+
+        <fieldset className="mt-6 grid grid-cols-2 gap-3">
+          <legend className="mb-2 text-sm font-medium text-slate-700">I am a</legend>
+          <button
+            aria-pressed={accountType === 'owner'}
+            className={`rounded-2xl border p-4 text-left transition ${accountType === 'owner' ? 'border-emerald-700 bg-emerald-50 ring-2 ring-emerald-700/15' : 'border-slate-200 hover:border-emerald-300'}`}
+            onClick={() => setAccountType('owner')}
+            type="button"
+          >
+            <span className="block font-semibold">EV user</span>
+            <span className="mt-1 block text-xs text-slate-600">Find and book chargers</span>
+          </button>
+          <button
+            aria-pressed={accountType === 'host'}
+            className={`rounded-2xl border p-4 text-left transition ${accountType === 'host' ? 'border-emerald-700 bg-emerald-50 ring-2 ring-emerald-700/15' : 'border-slate-200 hover:border-emerald-300'}`}
+            onClick={() => setAccountType('host')}
+            type="button"
+          >
+            <span className="block font-semibold">Charging host</span>
+            <span className="mt-1 block text-xs text-slate-600">List and manage chargers</span>
+          </button>
+        </fieldset>
 
         <form className="mt-8 flex flex-col gap-5" onSubmit={handleSubmit}>
           <label className="flex flex-col gap-2 text-sm font-medium">
@@ -94,7 +131,7 @@ export default function LoginPage() {
         {errorMessage && <p className="mt-5 text-sm text-red-700" role="alert">{errorMessage}</p>}
         <p className="mt-7 text-sm text-slate-600">
           New to ChargeMitra?{' '}
-          <Link className="font-semibold text-emerald-700 hover:underline" to="/register">
+          <Link className="font-semibold text-emerald-700 hover:underline" to={`/register?type=${accountType}`}>
             Create an account
           </Link>
         </p>

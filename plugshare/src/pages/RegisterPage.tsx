@@ -1,9 +1,13 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { supabase } from '../supabase'
 
 export default function RegisterPage() {
+  const [searchParams] = useSearchParams()
+  const [accountType, setAccountType] = useState<'EV_OWNER' | 'PROVIDER'>(
+    searchParams.get('type') === 'host' ? 'PROVIDER' : 'EV_OWNER',
+  )
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
@@ -23,7 +27,7 @@ export default function RegisterPage() {
         email,
         password,
         options: {
-          data: { full_name: name, phone },
+          data: { full_name: name, phone, role: accountType },
         },
       })
 
@@ -52,6 +56,27 @@ export default function RegisterPage() {
         Before registering, run <code>supabase-fix.sql</code> from the project in your Supabase SQL Editor to enable profile creation.
       </p>
       <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
+        <fieldset className="grid grid-cols-2 gap-3">
+          <legend className="mb-2 text-sm font-medium">Create an account as</legend>
+          <button
+            aria-pressed={accountType === 'EV_OWNER'}
+            className={`rounded-xl border p-3 text-left ${accountType === 'EV_OWNER' ? 'border-emerald-700 bg-emerald-50' : 'border-slate-300'}`}
+            onClick={() => setAccountType('EV_OWNER')}
+            type="button"
+          >
+            <span className="block font-semibold">EV user</span>
+            <span className="text-xs text-slate-600">Find chargers</span>
+          </button>
+          <button
+            aria-pressed={accountType === 'PROVIDER'}
+            className={`rounded-xl border p-3 text-left ${accountType === 'PROVIDER' ? 'border-emerald-700 bg-emerald-50' : 'border-slate-300'}`}
+            onClick={() => setAccountType('PROVIDER')}
+            type="button"
+          >
+            <span className="block font-semibold">Charging host</span>
+            <span className="text-xs text-slate-600">List chargers</span>
+          </button>
+        </fieldset>
         <label className="flex flex-col gap-1">
           Full name
           <input
@@ -107,7 +132,7 @@ export default function RegisterPage() {
       {errorMessage && <p className="mt-4 text-red-700" role="alert">{errorMessage}</p>}
       {successMessage && <p className="mt-4 text-emerald-700" role="status">{successMessage}</p>}
       <p className="mt-6">
-        Already have an account? <Link className="text-emerald-700 underline" to="/login">Log in</Link>
+        Already have an account? <Link className="text-emerald-700 underline" to={`/login?type=${accountType === 'PROVIDER' ? 'host' : 'owner'}`}>Log in</Link>
       </p>
     </main>
   )

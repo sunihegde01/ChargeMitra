@@ -10,16 +10,18 @@ type ChargerPin = {
   lng: number
   name: string
   pricePerKwh: number
-  distanceKm: number | null
+  distanceLabel: string | null
 }
 
-export function ChargerMap({ chargers, center, userLocation, nearestChargerId, selectedChargerId, onChargerSelect }: {
+export function ChargerMap({ chargers, center, userLocation, nearestChargerId, selectedChargerId, onChargerSelect, pickingLocation, onMapLocationSelect }: {
   chargers: ChargerPin[]
   center: { lat: number; lng: number }
   userLocation?: { lat: number; lng: number } | null
   nearestChargerId?: string
   selectedChargerId?: string
   onChargerSelect?: (chargerId: string) => void
+  pickingLocation?: boolean
+  onMapLocationSelect?: (point: { lat: number; lng: number }) => void
 }) {
   const mapRef = useRef<MapRef>(null)
   const [mapLoaded, setMapLoaded] = useState(false)
@@ -59,7 +61,12 @@ export function ChargerMap({ chargers, center, userLocation, nearestChargerId, s
       ref={mapRef}
       initialViewState={initialViewState}
       onLoad={() => setMapLoaded(true)}
-      style={{ width: '100%', height: '500px', borderRadius: '0.75rem' }}
+      onClick={(event) => {
+        if (pickingLocation) {
+          onMapLocationSelect?.({ lat: event.lngLat.lat, lng: event.lngLat.lng })
+        }
+      }}
+      style={{ width: '100%', height: '500px', borderRadius: '0.75rem', cursor: pickingLocation ? 'crosshair' : undefined }}
       mapStyle={MAP_STYLE}
     >
       <NavigationControl position="top-right" />
@@ -82,9 +89,9 @@ export function ChargerMap({ chargers, center, userLocation, nearestChargerId, s
                 Nearest
               </span>
             )}
-            {charger.distanceKm !== null && (
+            {charger.distanceLabel !== null && (
               <span className="mb-1 rounded-full bg-slate-900 px-2 py-1 text-xs font-semibold text-white shadow">
-                {charger.distanceKm.toFixed(1)} km
+                {charger.distanceLabel}
               </span>
             )}
             <span className={`rounded-full px-2 py-1 text-xs font-semibold text-white shadow ${charger.id === selectedChargerId ? 'bg-amber-500' : charger.id === nearestChargerId ? 'bg-blue-700' : 'bg-emerald-600'}`}>

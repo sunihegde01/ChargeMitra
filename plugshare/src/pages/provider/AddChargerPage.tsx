@@ -7,11 +7,32 @@ import { MAP_STYLE } from '../../mapStyle'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../supabase'
 
+type Point = { latitude: number; longitude: number }
 type Provider = { id: string; business_name: string; category: string; address: string | null }
 
 const fieldClass = 'w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:border-emerald-700 focus:ring-2 focus:ring-emerald-700/15'
 const categories = ['HOME', 'APARTMENT', 'OFFICE', 'COMMERCIAL', 'OTHER']
 const defaultMapView = { latitude: 20.5937, longitude: 78.9629, zoom: 4 }
+
+function parsePoint(location: unknown): Point | null {
+  if (typeof location === 'string') {
+    const point = location.match(/POINT\s*\(\s*(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s*\)/i)
+    if (point) return { longitude: Number(point[1]), latitude: Number(point[2]) }
+    try {
+      return parsePoint(JSON.parse(location) as unknown)
+    } catch {
+      return null
+    }
+  }
+  if (typeof location === 'object' && location !== null && 'coordinates' in location) {
+    const coordinates = location.coordinates
+    if (Array.isArray(coordinates) && coordinates.length >= 2) {
+      const [longitude, latitude] = coordinates
+      if (typeof latitude === 'number' && typeof longitude === 'number') return { latitude, longitude }
+    }
+  }
+  return null
+}
 
 export default function AddChargerPage() {
   const { user } = useAuth()
@@ -42,7 +63,7 @@ export default function AddChargerPage() {
       if (!user) return
       const { data, error } = await supabase
         .from('providers')
-        .select('id,business_name,category,address')
+        .select('id,business_name,category,address,location')
         .eq('profile_id', user.id)
         .maybeSingle()
       if (!active) return
@@ -52,6 +73,12 @@ export default function AddChargerPage() {
         setBusinessName(data.business_name)
         setCategory(data.category)
         setAddress(data.address ?? '')
+        const point = parsePoint(data.location)
+        if (point) {
+          setLatitude(String(point.latitude))
+          setLongitude(String(point.longitude))
+          setMapViewState({ ...point, zoom: 15 })
+        }
       }
       setInitializing(false)
     }
@@ -143,11 +170,16 @@ export default function AddChargerPage() {
 
     try {
       let providerId = provider?.id
+      const lat = Number(latitude)
+      const lng = Number(longitude)
+      if (!latitude || !longitude || !Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+        setErrorMessage('Select the charging point location by clicking the map or using your current location.')
+        return
+      }
+
       if (!providerId) {
-        const lat = Number(latitude)
-        const lng = Number(longitude)
-        if (!businessName.trim() || !latitude || !longitude || !Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
-          setErrorMessage('Enter a business name and use your current location before saving.')
+        if (!businessName.trim()) {
+          setErrorMessage('Enter a business name before saving.')
           return
         }
         const { data, error } = await supabase.from('providers').insert({
@@ -185,6 +217,18 @@ export default function AddChargerPage() {
 
       if (!providerId) {
         setErrorMessage('Provider profile was not available. Please try again.')
+        return
+      }
+
+      const { error: locationError } = await supabase
+        .from('providers')
+        .update({
+          address: address.trim() || null,
+          location: `SRID=4326;POINT(${lng} ${lat})`,
+        })
+        .eq('id', providerId)
+      if (locationError) {
+        setErrorMessage(`Could not save the charging point location: ${locationError.message}`)
         return
       }
 
@@ -235,57 +279,53 @@ export default function AddChargerPage() {
                   {categories.map((item) => <option key={item} value={item}>{item}</option>)}
                 </select>
               </label>
-              <label className="flex flex-col gap-2 text-sm font-medium">
-                Address (optional)
-                <input className={fieldClass} onChange={(event) => setAddress(event.target.value)} placeholder="Filled automatically when location is available" value={address} />
-              </label>
-              <div className="sm:col-span-2">
-                <button
-                  className="rounded-full border border-emerald-700 px-5 py-3 font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
-                  disabled={locating}
-                  onClick={useCurrentLocation}
-                  type="button"
-                >
-                  {locating ? 'Getting location and address...' : locationSelected ? 'Location selected · Update location' : 'Use my current location'}
-                </button>
-                {locationSelected && (
-                  <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900" role="status">
-                    <p className="font-semibold">Location added</p>
-                    <p className="mt-1">{address || 'Address lookup unavailable; the map pin will be saved.'}</p>
-                    <p className="mt-1 text-xs text-emerald-800">Coordinates: {Number(latitude).toFixed(6)}, {Number(longitude).toFixed(6)}</p>
-                  </div>
-                )}
-                <p className="mt-2 text-sm text-slate-600">
-                  Use your current location or click anywhere on the map to place the charger pin.
-                </p>
-                <div className="mt-4 h-[360px] overflow-hidden rounded-2xl border border-slate-200">
-                  <Map
-                    {...mapViewState}
-                    mapStyle={MAP_STYLE}
-                    onClick={(event) => void setSelectedLocation(event.lngLat.lat, event.lngLat.lng)}
-                    onMove={(event) => setMapViewState({
-                      latitude: event.viewState.latitude,
-                      longitude: event.viewState.longitude,
-                      zoom: event.viewState.zoom,
-                    })}
-                    style={{ width: '100%', height: '100%' }}
-                  >
-                    <NavigationControl position="top-right" />
-                    {latitude && longitude && (
-                      <Marker anchor="bottom" latitude={Number(latitude)} longitude={Number(longitude)}>
-                        <div className="rounded-full bg-emerald-700 px-3 py-2 text-sm font-semibold text-white shadow-lg">
-                          Charger location
-                        </div>
-                      </Marker>
-                    )}
-                  </Map>
-                </div>
-                <p className="mt-2 text-sm text-slate-600">Click the map to place the pin. Drag the map to explore and zoom in for a precise location.</p>
-                {latitude && longitude && (
-                  <p className="mt-2 text-sm font-medium text-emerald-800">Map pin selected and ready to save.</p>
-                )}
-              </div>
             </>}
+            <label className="flex flex-col gap-2 text-sm font-medium sm:col-span-2">
+              Charging point address (optional)
+              <input className={fieldClass} onChange={(event) => setAddress(event.target.value)} placeholder="Filled automatically when a map location is selected" value={address} />
+            </label>
+            <div className="sm:col-span-2">
+              <h2 className="font-semibold">Charging point location</h2>
+              <p className="mt-1 text-sm text-slate-600">Use your current location or click the map to place the charging point pin.</p>
+              <button
+                className="mt-3 rounded-full border border-emerald-700 px-5 py-3 font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={locating}
+                onClick={useCurrentLocation}
+                type="button"
+              >
+                {locating ? 'Getting location and address...' : locationSelected ? 'Location selected · Update location' : 'Use my current location'}
+              </button>
+              {locationSelected && (
+                <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900" role="status">
+                  <p className="font-semibold">Charging point location selected</p>
+                  <p className="mt-1">{address || 'Address lookup unavailable; the map pin will be saved.'}</p>
+                  <p className="mt-1 text-xs text-emerald-800">Coordinates: {Number(latitude).toFixed(6)}, {Number(longitude).toFixed(6)}</p>
+                </div>
+              )}
+              <div className="mt-4 h-[360px] overflow-hidden rounded-2xl border border-slate-200">
+                <Map
+                  {...mapViewState}
+                  mapStyle={MAP_STYLE}
+                  onClick={(event) => void setSelectedLocation(event.lngLat.lat, event.lngLat.lng)}
+                  onMove={(event) => setMapViewState({
+                    latitude: event.viewState.latitude,
+                    longitude: event.viewState.longitude,
+                    zoom: event.viewState.zoom,
+                  })}
+                  style={{ width: '100%', height: '100%' }}
+                >
+                  <NavigationControl position="top-right" />
+                  {latitude && longitude && (
+                    <Marker anchor="bottom" latitude={Number(latitude)} longitude={Number(longitude)}>
+                      <div className="rounded-full bg-emerald-700 px-3 py-2 text-sm font-semibold text-white shadow-lg">
+                        Charger location
+                      </div>
+                    </Marker>
+                  )}
+                </Map>
+              </div>
+              <p className="mt-2 text-sm text-slate-600">Drag the map to explore and zoom in for a precise location. This is the host location shown to users for its charging points.</p>
+            </div>
             <label className="flex flex-col gap-2 text-sm font-medium sm:col-span-2">
               Charger name
               <input className={fieldClass} onChange={(event) => setName(event.target.value)} required value={name} />

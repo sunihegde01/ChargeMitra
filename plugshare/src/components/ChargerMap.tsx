@@ -10,6 +10,7 @@ type ChargerPin = {
   lng: number
   name: string
   pricePerKwh: number
+  distanceKm: number | null
 }
 
 export function ChargerMap({ chargers, center, userLocation, nearestChargerId, selectedChargerId, onChargerSelect }: {
@@ -29,7 +30,7 @@ export function ChargerMap({ chargers, center, userLocation, nearestChargerId, s
   }), [center])
 
   useEffect(() => {
-    if (!mapLoaded || !chargers.length) return
+    if (!mapLoaded || (!chargers.length && !userLocation)) return
     const points = chargers.map((charger) => [charger.lng, charger.lat] as [number, number])
     if (userLocation) points.push([userLocation.lng, userLocation.lat])
     const bounds: [[number, number], [number, number]] = [
@@ -81,6 +82,11 @@ export function ChargerMap({ chargers, center, userLocation, nearestChargerId, s
                 Nearest
               </span>
             )}
+            {charger.distanceKm !== null && (
+              <span className="mb-1 rounded-full bg-slate-900 px-2 py-1 text-xs font-semibold text-white shadow">
+                {charger.distanceKm.toFixed(1)} km
+              </span>
+            )}
             <span className={`rounded-full px-2 py-1 text-xs font-semibold text-white shadow ${charger.id === selectedChargerId ? 'bg-amber-500' : charger.id === nearestChargerId ? 'bg-blue-700' : 'bg-emerald-600'}`}>
               ₹{charger.pricePerKwh}/kWh
             </span>
@@ -89,9 +95,14 @@ export function ChargerMap({ chargers, center, userLocation, nearestChargerId, s
         </Marker>
       ))}
       {userLocation && (
-        <Marker latitude={userLocation.lat} longitude={userLocation.lng} anchor="center">
-          <div className="flex h-5 w-5 items-center justify-center rounded-full border-2 border-white bg-blue-600 shadow-md" title="Your location">
-            <span className="sr-only">Your location</span>
+        <Marker latitude={userLocation.lat} longitude={userLocation.lng} anchor="bottom">
+          <div aria-label="Your location" className="flex flex-col items-center" role="img">
+            <span className="mb-1 rounded-full bg-fuchsia-700 px-2 py-1 text-xs font-bold text-white shadow-md">
+              Your location
+            </span>
+            <span className="relative flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-fuchsia-600 shadow-lg ring-4 ring-fuchsia-300/70">
+              <span className="h-2 w-2 rounded-full bg-white" />
+            </span>
           </div>
         </Marker>
       )}

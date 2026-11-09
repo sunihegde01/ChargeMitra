@@ -45,6 +45,7 @@ export default function FindChargerPage() {
   const [search, setSearch] = useState('')
   const [addressSearch, setAddressSearch] = useState('')
   const [searchCenter, setSearchCenter] = useState<Point>({ lat: 20.5937, lng: 78.9629 })
+  const [distanceOrigin, setDistanceOrigin] = useState<Point | null>(null)
   const [userLocation, setUserLocation] = useState<Point | null>(null)
   const [locating, setLocating] = useState(false)
   const [selectedChargerId, setSelectedChargerId] = useState('')
@@ -100,9 +101,11 @@ export default function FindChargerPage() {
     return matchesSearch.map((charger) => {
       const provider = providers.find((item) => item.id === charger.provider_id)
       const point = provider ? parsePoint(provider.location) : null
-      return { charger, point, distance: point ? distanceInKm(searchCenter, point) : null }
-    }).sort((first, second) => (first.distance ?? Number.POSITIVE_INFINITY) - (second.distance ?? Number.POSITIVE_INFINITY))
-  }, [chargers, providers, search, searchCenter])
+      return { charger, point, distance: point && distanceOrigin ? distanceInKm(distanceOrigin, point) : null }
+    }).sort((first, second) => distanceOrigin
+      ? (first.distance ?? Number.POSITIVE_INFINITY) - (second.distance ?? Number.POSITIVE_INFINITY)
+      : 0)
+  }, [chargers, providers, search, distanceOrigin])
 
   const mappedChargers = useMemo(() => visibleChargers.flatMap(({ charger, point, distance }) => point ? [{
     charger,
@@ -110,14 +113,15 @@ export default function FindChargerPage() {
     distance,
   }] : []), [visibleChargers])
   const nearbyChargers = useMemo(() => mappedChargers.slice(0, 10), [mappedChargers])
-  const pins = useMemo(() => nearbyChargers.map(({ charger, point }) => ({
+  const pins = useMemo(() => nearbyChargers.map(({ charger, point, distance }) => ({
       id: charger.id,
       lat: point.lat,
       lng: point.lng,
       name: charger.name,
       pricePerKwh: Number(charger.price_per_kwh),
+      distanceKm: distance,
     })), [nearbyChargers])
-  const nearestMappedChargerId = nearbyChargers[0]?.charger.id
+  const nearestMappedChargerId = distanceOrigin ? nearbyChargers[0]?.charger.id : undefined
   const selectedCharger = nearbyChargers.find(({ charger }) => charger.id === selectedChargerId)
 
   async function searchAddress(event: FormEvent<HTMLFormElement>) {
@@ -136,7 +140,9 @@ export default function FindChargerPage() {
         setErrorMessage('No matching address found. Try a nearby street or area.')
         return
       }
-      setSearchCenter({ lng: coordinates[0], lat: coordinates[1] })
+      const point = { lng: coordinates[0], lat: coordinates[1] }
+      setSearchCenter(point)
+      setDistanceOrigin(point)
       setUserLocation(null)
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Address search failed.')
@@ -167,6 +173,7 @@ export default function FindChargerPage() {
             return
           }
           setSearchCenter(point)
+          setDistanceOrigin(point)
           setUserLocation(point)
           setSearch('')
           setSuccessMessage('Your location is selected. Nearby charging points are sorted by distance.')
@@ -286,7 +293,9 @@ export default function FindChargerPage() {
             <div>
               <h2 className="text-xl font-semibold">Choose a charging point on the map</h2>
               <p className="mt-1 text-sm text-slate-600">
-                Showing the {nearbyChargers.length === 1 ? 'nearest mapped charging point' : `nearest ${nearbyChargers.length} mapped charging points`}. Select a map pin to view its booking form.
+                {distanceOrigin
+                  ? `Showing the nearest ${nearbyChargers.length} mapped charging points to your selected location. Select a map pin to view its booking form.`
+                  : 'Use my location or search for an area to see accurate distances and sort nearby points. Select a map pin to view its booking form.'}
               </p>
             </div>
             {!vehicles.length && !loading && <Link className="text-sm font-semibold text-emerald-700 underline" to="/owner/dashboard">Add a vehicle to book</Link>}
@@ -303,7 +312,11 @@ export default function FindChargerPage() {
                   <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">{selectedChargerDetails.charger.charger_type} charger · {selectedChargerDetails.charger.rated_power_kw} kW</p>
                   <h3 className="mt-2 text-xl font-semibold">{selectedChargerDetails.charger.name}</h3>
                   <p className="mt-1 text-slate-600">{selectedChargerDetails.provider?.business_name ?? 'Charging provider'}{selectedChargerDetails.provider?.address ? ` · ${selectedChargerDetails.provider.address}` : ''}</p>
-                  <p className="mt-2 text-sm font-medium text-emerald-800">{selectedChargerDetails.distance?.toFixed(1)} km away</p>
+                  <p className="mt-2 text-sm font-medium text-emerald-800">
+                    {selectedChargerDetails.distance === null
+                      ? 'Choose your location to calculate distance'
+                      : `${selectedChargerDetails.distance.toFixed(1)} km away`}
+                  </p>
                   <p className="mt-2 text-sm text-slate-600">Connector: {selectedChargerDetails.charger.connector_type}</p>
                 </div>
                 <p className="rounded-full bg-emerald-50 px-4 py-2 font-semibold text-emerald-800">₹{selectedChargerDetails.charger.price_per_kwh}/kWh</p>

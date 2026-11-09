@@ -20,11 +20,12 @@ type Charger = {
   name: string
   charger_type: string
   rated_power_kw: number
+  site_power_limit_kw: number | null
   connector_type: string
   price_per_kwh: number
 }
 
-type Vehicle = { id: string; brand: string; model: string }
+type Vehicle = { id: string; brand: string; model: string; max_ac_kw: number; max_dc_kw: number }
 type RoadDistanceResponse = {
   code?: string
   distances?: Array<Array<number | null>>
@@ -42,7 +43,6 @@ export default function FindChargerPage() {
   const [chargers, setChargers] = useState<Charger[]>([])
   const [providers, setProviders] = useState<Provider[]>([])
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
-  const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [searchCenter, setSearchCenter] = useState<Point>({ lat: 20.5937, lng: 78.9629 })
   const [distanceOrigin, setDistanceOrigin] = useState<Point | null>(null)
@@ -61,18 +61,16 @@ export default function FindChargerPage() {
 
   const loadChargers = useCallback(async () => {
     if (!user) return
-    setLoading(true)
     setErrorMessage('')
     const [chargerResult, providerResult, vehicleResult] = await Promise.all([
-      supabase.from('chargers').select('id,provider_id,name,charger_type,rated_power_kw,connector_type,price_per_kwh').eq('is_active', true),
+      supabase.from('chargers').select('id,provider_id,name,charger_type,rated_power_kw,site_power_limit_kw,connector_type,price_per_kwh').eq('is_active', true),
       supabase.from('providers').select('id,business_name,address,location'),
-      supabase.from('vehicles').select('id,brand,model').eq('owner_id', user.id),
+      supabase.from('vehicles').select('id,brand,model,max_ac_kw,max_dc_kw').eq('owner_id', user.id),
     ])
 
     const firstError = chargerResult.error ?? providerResult.error ?? vehicleResult.error
     if (firstError) {
       setErrorMessage(firstError.message)
-      setLoading(false)
       return
     }
     setChargers(chargerResult.data ?? [])
@@ -87,7 +85,6 @@ export default function FindChargerPage() {
     if (nextDefaultVehicleId && savedVehicleId !== nextDefaultVehicleId) {
       setDefaultVehicleId(user.id, nextDefaultVehicleId)
     }
-    setLoading(false)
   }, [user])
 
   useEffect(() => {
@@ -276,6 +273,28 @@ export default function FindChargerPage() {
       setErrorMessage('Choose a future start time and an end time after it.')
       return
     }
+    const vehicle = vehicles.find((item) => item.id === vehicleId)
+    if (!vehicle) {
+      setErrorMessage('Your selected vehicle could not be found. Choose a vehicle on your dashboard and try again.')
+      return
+    }
+    const vehiclePower = charger.charger_type.toUpperCase() === 'DC'
+      ? Number(vehicle.max_dc_kw)
+      : Number(vehicle.max_ac_kw)
+    if (vehiclePower <= 0) {
+      setErrorMessage(`Your selected vehicle does not support this ${charger.charger_type} charger.`)
+      return
+    }
+    const compatiblePower = Math.min(
+      Number(charger.rated_power_kw),
+      vehiclePower,
+      Number(charger.site_power_limit_kw) || Number(charger.rated_power_kw),
+    )
+    const estimatedTotalSnapshot = Number((
+      compatiblePower * 0.85
+      * ((end.getTime() - start.getTime()) / (60 * 60 * 1000))
+      * Number(charger.price_per_kwh)
+    ).toFixed(2))
 
     setSavingId(charger.id)
     setErrorMessage('')
@@ -288,6 +307,8 @@ export default function FindChargerPage() {
       scheduled_start: start.toISOString(),
       scheduled_end: end.toISOString(),
       price_per_kwh_snapshot: charger.price_per_kwh,
+      payment_method: 'PAY_AT_STATION',
+      estimated_total_snapshot: estimatedTotalSnapshot,
     })
 
     if (error?.code === '23P01' || error?.message.includes('no_overlap')) {
@@ -306,6 +327,28 @@ export default function FindChargerPage() {
         provider: providers.find((item) => item.id === selectedCharger.charger.provider_id),
       }
     : null
+  const bookingDurationHours = startsAt && endsAt
+    ? (new Date(endsAt).getTime() - new Date(startsAt).getTime()) / (60 * 60 * 1000)
+    : 0
+  const selectedVehicle = vehicles.find((vehicle) => vehicle.id === vehicleId)
+  const vehiclePowerLimit = selectedChargerDetails && selectedVehicle
+    ? selectedChargerDetails.charger.charger_type.toUpperCase() === 'DC'
+      ? Number(selectedVehicle.max_dc_kw)
+      : Number(selectedVehicle.max_ac_kw)
+    : null
+  const compatiblePowerKw = selectedChargerDetails && vehiclePowerLimit !== null
+    ? Math.min(
+      Number(selectedChargerDetails.charger.rated_power_kw),
+      vehiclePowerLimit,
+      Number(selectedChargerDetails.charger.site_power_limit_kw) || Number(selectedChargerDetails.charger.rated_power_kw),
+    )
+    : null
+  const estimatedEnergyKwh = compatiblePowerKw !== null && Number.isFinite(bookingDurationHours) && bookingDurationHours > 0
+    ? compatiblePowerKw * 0.85 * bookingDurationHours
+    : null
+  const estimatedTotal = estimatedEnergyKwh === null || !selectedChargerDetails
+    ? null
+    : estimatedEnergyKwh * Number(selectedChargerDetails.charger.price_per_kwh)
 
   return (
     <main className="min-h-screen bg-[#f7f9f6] px-6 py-8 text-slate-900">
@@ -398,7 +441,32 @@ export default function FindChargerPage() {
                   <span className="text-xs font-normal text-slate-500">When you expect the charging session to finish.</span>
                   <input aria-label="End date and time" className={fieldClass} onChange={(event) => setEndsAt(event.target.value)} required type="datetime-local" value={endsAt} />
                 </label>
-                <button className="rounded-full bg-emerald-700 px-5 py-3 font-semibold text-white disabled:opacity-60" disabled={!vehicles.length || savingId === selectedChargerDetails.charger.id} type="submit">
+                <fieldset className="rounded-2xl border border-slate-200 p-4 sm:col-span-2">
+                  <legend className="px-1 text-sm font-semibold text-slate-700">Payment option</legend>
+                  <label className="flex items-start gap-3">
+                    <input checked readOnly className="mt-1 accent-emerald-700" name="payment-method" type="radio" value="PAY_AT_STATION" />
+                    <span>
+                      <span className="block font-semibold text-slate-900">Pay at the station</span>
+                      <span className="mt-1 block text-sm text-slate-600">Pay the host by cash or UPI after charging. Online payment is not available.</span>
+                    </span>
+                  </label>
+                </fieldset>
+                <div className="rounded-2xl bg-emerald-50 p-4 sm:col-span-2">
+                  <p className="text-sm font-semibold text-emerald-900">Estimated final amount</p>
+                  {compatiblePowerKw !== null && compatiblePowerKw <= 0 ? (
+                    <p className="mt-1 text-sm text-red-800">Your selected vehicle does not support this charger type.</p>
+                  ) : estimatedTotal === null ? (
+                    <p className="mt-1 text-sm text-emerald-800">Choose a valid start and end time to see the estimate.</p>
+                  ) : (
+                    <>
+                      <p className="mt-1 text-2xl font-bold text-emerald-900">₹{estimatedTotal.toFixed(2)}</p>
+                      <p className="mt-1 text-sm text-emerald-800">
+                        Based on about {estimatedEnergyKwh?.toFixed(2)} kWh at ₹{selectedChargerDetails.charger.price_per_kwh}/kWh. This estimate uses 85% of rated power; the amount due at the station is based on energy actually delivered.
+                      </p>
+                    </>
+                  )}
+                </div>
+                <button className="rounded-full bg-emerald-700 px-5 py-3 font-semibold text-white disabled:opacity-60 sm:col-span-2" disabled={!vehicles.length || savingId === selectedChargerDetails.charger.id || estimatedTotal === null || estimatedTotal <= 0 || !Number.isFinite(estimatedTotal)} type="submit">
                   {savingId === selectedChargerDetails.charger.id ? 'Requesting...' : 'Request booking'}
                 </button>
               </form>

@@ -29,6 +29,7 @@ export default function AddChargerPage() {
   const [name, setName] = useState('')
   const [chargerType, setChargerType] = useState('AC')
   const [power, setPower] = useState('')
+  const [sitePowerLimit, setSitePowerLimit] = useState('')
   const [connector, setConnector] = useState('Type 2')
   const [price, setPrice] = useState('')
   const [hasMeter, setHasMeter] = useState(false)
@@ -220,6 +221,7 @@ export default function AddChargerPage() {
         name: name.trim(),
         charger_type: chargerType,
         rated_power_kw: Number(power),
+        site_power_limit_kw: sitePowerLimit ? Number(sitePowerLimit) : null,
         connector_type: connector.trim(),
         price_per_kwh: Number(price),
         has_dedicated_meter: hasMeter,
@@ -339,6 +341,11 @@ export default function AddChargerPage() {
             <label className="flex flex-col gap-2 text-sm font-medium">
               Rated power (kW)
               <input className={fieldClass} min="0.1" onChange={(event) => setPower(event.target.value)} required step="0.1" type="number" value={power} />
+            </label>
+            <label className="flex flex-col gap-2 text-sm font-medium">
+              Site power limit (kW, optional)
+              <input className={fieldClass} min="0.1" onChange={(event) => setSitePowerLimit(event.target.value)} step="0.1" type="number" value={sitePowerLimit} />
+              <span className="text-xs font-normal text-slate-500">The maximum power available to this charger at your site.</span>
             </label>
             <label className="flex flex-col gap-2 text-sm font-medium">
               Connector type

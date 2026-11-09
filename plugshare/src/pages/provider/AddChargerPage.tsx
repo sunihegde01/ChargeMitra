@@ -63,24 +63,53 @@ export default function AddChargerPage() {
     }
 
     setLocating(true)
-    navigator.geolocation.getCurrentPosition(
-      ({ coords }) => {
-        setLatitude(String(coords.latitude))
-        setLongitude(String(coords.longitude))
-        setSuccessMessage('Current location added.')
+    navigator.geolocation.getCurrentPosition(async ({ coords }) => {
+      setLatitude(String(coords.latitude))
+      setLongitude(String(coords.longitude))
+      try {
+        const query = new URLSearchParams({
+          lat: String(coords.latitude),
+          lon: String(coords.longitude),
+        })
+        const response = await fetch(`https://photon.komoot.io/reverse?${query}`)
+        if (!response.ok) throw new Error(`Address lookup failed (${response.status}).`)
+        const result = await response.json() as {
+          features?: Array<{ properties?: Record<string, unknown> }>
+        }
+        const properties = result.features?.[0]?.properties
+        const addressParts = properties
+          ? [
+              properties.name,
+              [properties.housenumber, properties.street].filter((part) => typeof part === 'string').join(' '),
+              properties.postcode,
+              properties.city,
+              properties.state,
+              properties.country,
+            ].filter((part): part is string => typeof part === 'string' && part.length > 0)
+          : []
+        const uniqueParts = [...new Set(addressParts)]
+        if (uniqueParts.length) {
+          setAddress(uniqueParts.join(', '))
+          setSuccessMessage('Location captured and address filled in.')
+        } else {
+          setAddress('')
+          setSuccessMessage('Location captured. No street address was found; the coordinates will be saved.')
+        }
+      } catch {
+        setAddress('')
+        setSuccessMessage('Location captured. Address lookup was unavailable; the coordinates will be saved.')
+      } finally {
         setLocating(false)
-      },
-      (error) => {
-        const message = error.code === error.PERMISSION_DENIED
-          ? 'Location permission was denied. Allow location access in your browser settings or enter coordinates manually.'
-          : error.code === error.POSITION_UNAVAILABLE
-            ? 'Your location is unavailable right now. Try again or enter coordinates manually.'
-            : 'Could not get your location in time. Try again or enter coordinates manually.'
-        setErrorMessage(message)
-        setLocating(false)
-      },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 },
-    )
+      }
+    }, (error) => {
+      const message = error.code === error.PERMISSION_DENIED
+        ? 'Location permission was denied. Allow location access in your browser settings or enter the coordinates manually.'
+        : error.code === error.POSITION_UNAVAILABLE
+          ? 'Your location is unavailable right now. Try again or enter coordinates manually.'
+          : 'Could not get your location in time. Try again or enter coordinates manually.'
+      setErrorMessage(message)
+      setLocating(false)
+    }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 })
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -95,15 +124,15 @@ export default function AddChargerPage() {
       if (!providerId) {
         const lat = Number(latitude)
         const lng = Number(longitude)
-        if (!businessName.trim() || !address.trim() || !Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
-          setErrorMessage('Enter a business name, address, and valid latitude/longitude.')
+        if (!businessName.trim() || !latitude || !longitude || !Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+          setErrorMessage('Enter a business name and use your current location before saving.')
           return
         }
         const { data, error } = await supabase.from('providers').insert({
           profile_id: user.id,
           business_name: businessName.trim(),
           category,
-          address: address.trim(),
+          address: address.trim() || null,
           location: { type: 'Point', coordinates: [lng, lat] },
         }).select('id').single()
         if (error || !data?.id) {
@@ -112,7 +141,7 @@ export default function AddChargerPage() {
         }
         const newProviderId = data.id
         providerId = newProviderId
-        setProvider({ id: newProviderId, business_name: businessName.trim(), category, address: address.trim() })
+        setProvider({ id: newProviderId, business_name: businessName.trim(), category, address: address.trim() || null })
 
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
@@ -185,8 +214,8 @@ export default function AddChargerPage() {
                 </select>
               </label>
               <label className="flex flex-col gap-2 text-sm font-medium">
-                Address
-                <input className={fieldClass} onChange={(event) => setAddress(event.target.value)} required value={address} />
+                Address (optional)
+                <input className={fieldClass} onChange={(event) => setAddress(event.target.value)} placeholder="Filled automatically when location is available" value={address} />
               </label>
               <div className="sm:col-span-2">
                 <button
@@ -195,20 +224,15 @@ export default function AddChargerPage() {
                   onClick={useCurrentLocation}
                   type="button"
                 >
-                  {locating ? 'Getting your location...' : 'Use my current location'}
+                  {locating ? 'Getting location and address...' : 'Use my current location'}
                 </button>
                 <p className="mt-2 text-sm text-slate-600">
-                  Allow location access when your browser asks. You can also enter the coordinates manually.
+                  Allow location access to save your coordinates and fill in the nearby address automatically.
                 </p>
+                {latitude && longitude && (
+                  <p className="mt-2 text-sm font-medium text-emerald-800">Location captured and ready to save.</p>
+                )}
               </div>
-              <label className="flex flex-col gap-2 text-sm font-medium">
-                Latitude
-                <input className={fieldClass} max="90" min="-90" onChange={(event) => setLatitude(event.target.value)} required step="any" type="number" value={latitude} />
-              </label>
-              <label className="flex flex-col gap-2 text-sm font-medium">
-                Longitude
-                <input className={fieldClass} max="180" min="-180" onChange={(event) => setLongitude(event.target.value)} required step="any" type="number" value={longitude} />
-              </label>
             </>}
             <label className="flex flex-col gap-2 text-sm font-medium sm:col-span-2">
               Charger name

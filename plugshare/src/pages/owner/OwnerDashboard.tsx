@@ -323,6 +323,8 @@ export default function OwnerDashboard() {
     setSaving(false)
   }
 
+  const defaultVehicle = vehicles.find((vehicle) => vehicle.id === defaultVehicleId)
+
   return (
     <main className="min-h-screen bg-[#f7f9f6] px-6 py-8 text-slate-900">
       <div className="mx-auto max-w-5xl">
@@ -332,10 +334,7 @@ export default function OwnerDashboard() {
             <h1 className="mt-3 text-3xl font-semibold">User dashboard</h1>
             <p className="mt-1 text-slate-600">Manage your vehicles and charging bookings.</p>
           </div>
-          <div className="flex gap-3">
-            <Link className="rounded-full bg-emerald-700 px-5 py-3 font-semibold text-white" to="/owner/find">Find a charger</Link>
-            <button className="rounded-full border border-slate-300 px-5 py-3 font-semibold" onClick={() => void signOut()}>Sign out</button>
-          </div>
+          <button className="rounded-full border border-slate-300 px-5 py-3 font-semibold" onClick={() => void signOut()}>Sign out</button>
         </header>
 
         {errorMessage && <p className="mt-6 rounded-xl bg-red-50 p-4 text-red-800" role="alert">{errorMessage}</p>}
@@ -344,45 +343,33 @@ export default function OwnerDashboard() {
         <section className="mt-8 grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
           <div className="rounded-3xl border border-slate-200 bg-white p-6">
             <div className="flex items-center justify-between gap-3">
-              <h2 className="text-xl font-semibold">Your EVs</h2>
+              <h2 className="text-xl font-semibold">Default vehicle</h2>
               <a className="text-sm font-semibold text-emerald-700 underline" href="#add-car">Add another car</a>
             </div>
             {loading ? <p className="mt-4 text-slate-600">Loading vehicles...</p> : vehicles.length ? (
-              <ul className="mt-4 divide-y divide-slate-100">
-                {vehicles.map((vehicle) => (
-                  <li className="py-4 first:pt-0 last:pb-0" key={vehicle.id}>
-                    <p className="font-semibold">{vehicle.brand} {vehicle.model}{vehicle.variant ? ` · ${vehicle.variant}` : ''}</p>
-                    <p className="mt-1 text-sm text-slate-600">{vehicle.usable_battery_kwh} kWh · {vehicle.connector_types.join(', ')}</p>
-                  </li>
-                ))}
-              </ul>
+              <>
+                {defaultVehicle && (
+                  <div className="mt-4 rounded-2xl bg-emerald-50 p-4">
+                    <p className="font-semibold">{defaultVehicle.brand} {defaultVehicle.model}{defaultVehicle.variant ? ` · ${defaultVehicle.variant}` : ''}</p>
+                    <p className="mt-1 text-sm text-slate-600">{defaultVehicle.usable_battery_kwh} kWh · {defaultVehicle.connector_types.join(', ')}</p>
+                  </div>
+                )}
+                <label className="mt-4 grid gap-2 text-sm font-medium text-slate-700">
+                  Change default vehicle
+                  <select
+                    className={fieldClass}
+                    onChange={(event) => chooseDefaultVehicle(event.target.value)}
+                    value={defaultVehicleId}
+                  >
+                    {vehicles.map((vehicle) => (
+                      <option key={vehicle.id} value={vehicle.id}>{vehicle.brand} {vehicle.model}</option>
+                    ))}
+                  </select>
+                </label>
+              </>
             ) : <p className="mt-4 text-slate-600">Add your car to start booking chargers.</p>}
 
-            {!!vehicles.length && (
-              <fieldset className="mt-5 rounded-2xl border border-slate-200 p-4">
-                <legend className="px-1 text-sm font-semibold">Default car for bookings</legend>
-                <p className="mb-3 text-xs text-slate-600">This car is preselected when you book. You can change it for each booking.</p>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {vehicles.map((vehicle) => (
-                    <label
-                      className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3 ${defaultVehicleId === vehicle.id ? 'border-emerald-600 bg-emerald-50' : 'border-slate-200'}`}
-                      key={vehicle.id}
-                    >
-                      <input
-                        checked={defaultVehicleId === vehicle.id}
-                        className="accent-emerald-700"
-                        name="default-vehicle"
-                        onChange={() => chooseDefaultVehicle(vehicle.id)}
-                        type="radio"
-                        value={vehicle.id}
-                      />
-                      <span className="font-medium">{vehicle.brand} {vehicle.model}</span>
-                      {defaultVehicleId === vehicle.id && <span className="ml-auto text-xs font-semibold text-emerald-800">Default</span>}
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
-            )}
+            {!!vehicles.length && <p className="mt-3 text-xs text-slate-500">This vehicle is automatically used for charger bookings.</p>}
 
             <form className="mt-6 grid gap-3 border-t border-slate-100 pt-6 sm:grid-cols-2" id="add-car" onSubmit={addVehicle}>
               <h3 className="font-semibold sm:col-span-2">Add your car</h3>
@@ -514,6 +501,19 @@ export default function OwnerDashboard() {
                 ))}
               </ul>
             ) : <p className="mt-4 text-slate-600">Your upcoming bookings will appear here.</p>}
+            <Link
+              className="group mt-6 flex items-center justify-between gap-4 overflow-hidden rounded-2xl bg-gradient-to-r from-emerald-700 via-emerald-600 to-teal-500 p-5 text-white shadow-lg shadow-emerald-900/15 transition hover:-translate-y-0.5 hover:shadow-xl focus:outline-none focus:ring-4 focus:ring-emerald-300"
+              to="/owner/find"
+            >
+              <span className="flex items-center gap-4">
+                <span aria-hidden="true" className="grid size-12 shrink-0 place-items-center rounded-xl bg-white/15 text-2xl ring-1 ring-white/20">⚡</span>
+                <span>
+                  <span className="block text-lg font-semibold">Find a charger</span>
+                  <span className="mt-1 block text-sm text-emerald-50">Explore nearby charging points and book a time</span>
+                </span>
+              </span>
+              <span aria-hidden="true" className="text-2xl transition-transform group-hover:translate-x-1">→</span>
+            </Link>
           </div>
         </section>
       </div>

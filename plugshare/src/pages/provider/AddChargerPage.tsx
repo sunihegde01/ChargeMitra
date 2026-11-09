@@ -25,6 +25,7 @@ export default function AddChargerPage() {
   const [price, setPrice] = useState('')
   const [hasMeter, setHasMeter] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [locating, setLocating] = useState(false)
   const [initializing, setInitializing] = useState(true)
   const [errorMessage, setErrorMessage] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
@@ -51,6 +52,36 @@ export default function AddChargerPage() {
     void loadProvider()
     return () => { active = false }
   }, [user])
+
+  function useCurrentLocation() {
+    setErrorMessage('')
+    setSuccessMessage('')
+
+    if (!navigator.geolocation) {
+      setErrorMessage('Location access is not supported by this browser. Enter the coordinates manually.')
+      return
+    }
+
+    setLocating(true)
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        setLatitude(String(coords.latitude))
+        setLongitude(String(coords.longitude))
+        setSuccessMessage('Current location added.')
+        setLocating(false)
+      },
+      (error) => {
+        const message = error.code === error.PERMISSION_DENIED
+          ? 'Location permission was denied. Allow location access in your browser settings or enter coordinates manually.'
+          : error.code === error.POSITION_UNAVAILABLE
+            ? 'Your location is unavailable right now. Try again or enter coordinates manually.'
+            : 'Could not get your location in time. Try again or enter coordinates manually.'
+        setErrorMessage(message)
+        setLocating(false)
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 },
+    )
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -157,6 +188,19 @@ export default function AddChargerPage() {
                 Address
                 <input className={fieldClass} onChange={(event) => setAddress(event.target.value)} required value={address} />
               </label>
+              <div className="sm:col-span-2">
+                <button
+                  className="rounded-full border border-emerald-700 px-5 py-3 font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={locating}
+                  onClick={useCurrentLocation}
+                  type="button"
+                >
+                  {locating ? 'Getting your location...' : 'Use my current location'}
+                </button>
+                <p className="mt-2 text-sm text-slate-600">
+                  Allow location access when your browser asks. You can also enter the coordinates manually.
+                </p>
+              </div>
               <label className="flex flex-col gap-2 text-sm font-medium">
                 Latitude
                 <input className={fieldClass} max="90" min="-90" onChange={(event) => setLatitude(event.target.value)} required step="any" type="number" value={latitude} />

@@ -25,6 +25,9 @@ type Session = {
   final_amount: number | null
   active_duration_seconds: number | null
   status: string
+  payment_status: 'UNPAID' | 'PENDING' | 'PAID'
+  razorpay_order_id: string | null
+  razorpay_payment_id: string | null
 }
 type SessionEvent = { event_type: string; recorded_at: string }
 type Booking = {
@@ -41,11 +44,65 @@ type Booking = {
 }
 type Charger = { name: string; charger_type: string; rated_power_kw: number; connector_type: string }
 
-async function getFunctionErrorMessage(error: unknown): Promise<string> {
+type RazorpayOrder = {
+  key_id: string
+  order_id: string
+  amount: number
+  currency: 'INR'
+  name: string
+  description: string
+}
+
+type RazorpayPaymentResponse = {
+  razorpay_order_id: string
+  razorpay_payment_id: string
+  razorpay_signature: string
+}
+
+type RazorpayCheckoutInstance = {
+  open: () => void
+  on: (event: 'payment.failed', handler: (response: { error?: { description?: string } }) => void) => void
+}
+
+type RazorpayCheckoutOptions = {
+  key: string
+  amount: number
+  currency: string
+  name: string
+  description: string
+  order_id: string
+  prefill: { email?: string }
+  theme: { color: string }
+  handler: (response: RazorpayPaymentResponse) => void
+  modal: { ondismiss: () => void }
+}
+
+declare global {
+  interface Window {
+    Razorpay?: new (options: RazorpayCheckoutOptions) => RazorpayCheckoutInstance
+  }
+}
+
+function loadRazorpayCheckout(): Promise<void> {
+  if (window.Razorpay) return Promise.resolve()
+  return new Promise((resolve, reject) => {
+    const existingScript = document.querySelector<HTMLScriptElement>('script[src="https://checkout.razorpay.com/v1/checkout.js"]')
+    const script = existingScript ?? document.createElement('script')
+    script.addEventListener('load', () => resolve(), { once: true })
+    script.addEventListener('error', () => reject(new Error('Could not load Razorpay Checkout. Check your internet connection and try again.')), { once: true })
+    if (!existingScript) {
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js'
+      script.async = true
+      document.body.appendChild(script)
+    }
+  })
+}
+
+async function getFunctionErrorMessage(error: unknown, fallback = 'The request could not be completed.'): Promise<string> {
   if (error && typeof error === 'object' && 'context' in error) {
     const context = error.context
     if (!(context instanceof Response)) {
-      return error instanceof Error ? error.message : 'Could not play the bill explanation.'
+      return error instanceof Error ? error.message : fallback
     }
     try {
       const body = await context.clone().json() as { error?: unknown; message?: unknown }
@@ -54,14 +111,14 @@ async function getFunctionErrorMessage(error: unknown): Promise<string> {
     } catch {
       try {
         const responseText = await context.clone().text()
-        if (responseText) return `Voice playback failed (${context.status}): ${responseText.slice(0, 300)}`
+        if (responseText) return `Request failed (${context.status}): ${responseText.slice(0, 300)}`
       } catch {
-        return error instanceof Error ? error.message : 'Could not play the bill explanation.'
+        return error instanceof Error ? error.message : fallback
       }
     }
-    return `Voice playback failed (HTTP ${context.status}). ${error instanceof Error ? error.message : ''}`.trim()
+    return `Request failed (HTTP ${context.status}). ${error instanceof Error ? error.message : ''}`.trim()
   }
-  return error instanceof Error ? error.message : 'Could not play the bill explanation.'
+  return error instanceof Error ? error.message : fallback
 }
 
 function formatDuration(seconds: number): string {
@@ -85,6 +142,9 @@ export default function ActiveSessionPage() {
   const [finalReading, setFinalReading] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [paymentLoading, setPaymentLoading] = useState(false)
+  const [checkoutOpen, setCheckoutOpen] = useState(false)
+  const [paymentError, setPaymentError] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
   const [billLanguage, setBillLanguage] = useState<'en' | 'kn' | 'hi'>('en')
@@ -108,7 +168,7 @@ export default function ActiveSessionPage() {
     setSessionEvents([])
     const { data: sessionRow, error: sessionError } = await supabase
       .from('charging_sessions')
-      .select('id,booking_id,calculation_method,method_confirmed_by_owner,provider_approved_at,started_at,ended_at,paused_seconds,paused_at,initial_meter_reading,final_meter_reading,actual_kwh,estimated_kwh,compatible_power_kw,average_power_factor,estimated_average_power_kw,final_amount,active_duration_seconds,status')
+      .select('id,booking_id,calculation_method,method_confirmed_by_owner,provider_approved_at,started_at,ended_at,paused_seconds,paused_at,initial_meter_reading,final_meter_reading,actual_kwh,estimated_kwh,compatible_power_kw,average_power_factor,estimated_average_power_kw,final_amount,active_duration_seconds,status,payment_status,razorpay_order_id,razorpay_payment_id')
       .eq('id', id)
       .maybeSingle()
     if (sessionError) {
@@ -225,6 +285,71 @@ export default function ActiveSessionPage() {
     setSaving(false)
   }
 
+  async function payFinalBill() {
+    if (!id || !session || session.payment_status === 'PAID') return
+    setPaymentLoading(true)
+    setPaymentError('')
+    try {
+      await loadRazorpayCheckout()
+      if (!window.Razorpay) throw new Error('Razorpay Checkout did not initialize. Refresh the page and try again.')
+
+      const { data: order, error: orderError } = await supabase.functions.invoke<RazorpayOrder>('razorpay-payment', {
+        body: { action: 'create-order', session_id: id },
+      })
+      if (orderError) throw new Error(await getFunctionErrorMessage(orderError))
+      if (!order?.key_id || !order.order_id || !order.amount) throw new Error('The payment service returned an incomplete order.')
+
+      const checkout = new window.Razorpay({
+        key: order.key_id,
+        amount: order.amount,
+        currency: order.currency,
+        name: order.name,
+        description: order.description,
+        order_id: order.order_id,
+        prefill: { email: user?.email },
+        theme: { color: '#047857' },
+        handler: (response) => {
+          setPaymentLoading(true)
+          setPaymentError('')
+          void (async () => {
+            try {
+              const { error: verifyError } = await supabase.functions.invoke('razorpay-payment', {
+                body: {
+                  action: 'verify-payment',
+                  session_id: id,
+                  razorpay_order_id: response.razorpay_order_id,
+                  razorpay_payment_id: response.razorpay_payment_id,
+                  razorpay_signature: response.razorpay_signature,
+                },
+              })
+              if (verifyError) throw new Error(await getFunctionErrorMessage(verifyError))
+              setSuccessMessage('Payment successful. Razorpay has verified your bill payment.')
+              await loadSession()
+            } catch (error) {
+              setPaymentError(error instanceof Error ? error.message : 'Payment verification failed. If money was deducted, contact support with your Razorpay payment ID.')
+            } finally {
+              setPaymentLoading(false)
+              setCheckoutOpen(false)
+            }
+          })()
+        },
+        modal: {
+          ondismiss: () => setCheckoutOpen(false),
+        },
+      })
+      checkout.on('payment.failed', (response) => {
+        setPaymentError(response.error?.description ?? 'Payment failed. You can try again.')
+        setCheckoutOpen(false)
+      })
+      setCheckoutOpen(true)
+      checkout.open()
+    } catch (error) {
+      setPaymentError(error instanceof Error ? error.message : 'Could not start the Razorpay payment.')
+    } finally {
+      setPaymentLoading(false)
+    }
+  }
+
   async function explainBill() {
     const quantity = session?.actual_kwh ?? session?.estimated_kwh
     if (!session || quantity == null || booking == null || finalAmount == null) {
@@ -247,7 +372,7 @@ export default function ActiveSessionPage() {
         },
         headers: { 'x-sarvam-action': 'explain-bill' },
       })
-      if (error) throw new Error(await getFunctionErrorMessage(error))
+      if (error) throw new Error(await getFunctionErrorMessage(error, 'Could not create a bill explanation.'))
       if (!data?.explanation?.trim()) throw new Error('Sarvam returned an empty bill explanation.')
       setBillExplanation(data.explanation)
     } catch (error) {
@@ -438,6 +563,38 @@ export default function ActiveSessionPage() {
                     <div><dt className="text-slate-600">Platform fee</dt><dd className="font-medium">Not provided in this bill</dd></div>
                     <div><dt className="text-slate-600">Total · {session.calculation_method === 'METER_BASED' ? 'ACTUAL' : 'ESTIMATED'}</dt><dd className="font-medium">₹{Number(finalAmount).toFixed(2)}</dd></div>
                   </dl>
+                  <div className="mt-4 rounded-xl border border-emerald-200 bg-white p-4">
+                    {session.payment_status === 'PAID' ? (
+                      <>
+                        <p className="font-semibold text-emerald-800">Paid with Razorpay</p>
+                        {session.razorpay_payment_id && (
+                          <p className="mt-1 break-all text-xs text-slate-600">Payment ID: {session.razorpay_payment_id}</p>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          className="rounded-full bg-emerald-700 px-5 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                          disabled={paymentLoading || checkoutOpen || Number(finalAmount) <= 0}
+                          onClick={() => void payFinalBill()}
+                          type="button"
+                        >
+                          {paymentLoading
+                            ? 'Preparing secure checkout…'
+                            : checkoutOpen
+                              ? 'Complete payment in Razorpay…'
+                              : session.payment_status === 'PENDING'
+                                ? 'Continue Razorpay payment'
+                                : 'Pay securely with Razorpay'}
+                        </button>
+                        <p className="mt-2 text-xs text-slate-600">
+                          The final bill amount is sent to Razorpay over a secure checkout.
+                          {session.payment_status === 'PENDING' ? ' Your previous order can be resumed.' : ''}
+                        </p>
+                      </>
+                    )}
+                    {paymentError && <p className="mt-3 text-sm text-red-700" role="alert">{paymentError}</p>}
+                  </div>
                   <div className="mt-4 flex flex-wrap items-end gap-3">
                     <label className="grid gap-1 text-sm font-medium">
                       Explanation language

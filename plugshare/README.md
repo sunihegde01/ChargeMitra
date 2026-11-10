@@ -52,3 +52,42 @@ The function disables gateway JWT verification so the browser can establish its 
 4. **Help chatbot:** Sign in and choose **Help & support** from the home page. Ask about booking, billing, or payment in English, Kannada, or Hindi; out-of-scope topics should be redirected to ChargeMitra support.
 
 Sarvam API availability and a configured secret are required for AI actions. If those actions fail, ordinary page navigation, charger booking, bill details, and the static help answers remain available.
+
+## Razorpay final-bill payments
+
+The owner can pay a completed session's database-calculated final amount from its bill review. Razorpay orders are created by the `razorpay-payment` Supabase Edge Function; the function verifies the Checkout signature and confirms the captured amount before marking the session paid. Keep the Razorpay key secret and webhook secret in Supabase Function secrets, never in frontend environment variables.
+
+### One-time setup
+
+1. In the Razorpay Dashboard, enable **Test Mode** and create API keys. Keep the Key ID and Key Secret private.
+2. In the Supabase Dashboard, open **SQL Editor**, run `supabase/migrations/20261110000000_razorpay_payments.sql`, and confirm it completes successfully.
+3. Install the Supabase CLI if needed, then from this `plugshare` directory log in and link the existing Supabase project:
+
+   ```sh
+   supabase login
+   supabase link --project-ref <your-project-ref>
+   ```
+
+4. Save the Razorpay credentials as Edge Function secrets and deploy the function:
+
+   ```sh
+   supabase secrets set RAZORPAY_KEY_ID=<test-key-id> RAZORPAY_KEY_SECRET=<test-key-secret>
+   supabase functions deploy razorpay-payment
+   ```
+
+5. In Razorpay Dashboard **Webhooks**, add this endpoint:
+
+   ```text
+   https://<your-project-ref>.supabase.co/functions/v1/razorpay-payment
+   ```
+
+   Subscribe to `payment.captured`. Set a strong webhook secret in Razorpay, then save the exact same value in Supabase:
+
+   ```sh
+   supabase secrets set RAZORPAY_WEBHOOK_SECRET=<the-webhook-secret>
+   ```
+
+6. Confirm the frontend `.env.local` contains the Supabase project URL and publishable/anon key, restart Vite, sign in as the booking owner, and use **Pay securely with Razorpay** on a stopped session with a final amount. Complete a Test Mode payment and confirm the bill shows **Paid with Razorpay**.
+7. Before launch, configure live-mode Razorpay API keys and a live webhook separately. Never use a Razorpay Key Secret or Supabase service-role key in a `VITE_` variable or browser code.
+
+The Supabase CLI and Razorpay Dashboard are external account tools; run these setup commands and dashboard steps yourself. Razorpay live payments require the merchant account to be activated by Razorpay.

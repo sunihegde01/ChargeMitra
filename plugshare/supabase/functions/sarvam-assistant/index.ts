@@ -173,10 +173,11 @@ async function chat(
   }
   const choice = result.choices?.[0]
   const content = choice?.message?.content
+  if (choice?.finish_reason === 'length') {
+    throw new Error('Sarvam reached its response limit. Please retry with a shorter request.')
+  }
   if (typeof content !== 'string' || !content.trim()) {
-    const reason = choice?.finish_reason === 'length'
-      ? 'The response reached its output limit. Please shorten the request and try again.'
-      : choice?.message?.tool_calls
+    const reason = choice?.message?.tool_calls
         ? 'Sarvam returned a tool call instead of a text reply.'
         : 'Sarvam produced no reply text. Please try again.'
     throw new Error(reason)
@@ -394,7 +395,7 @@ Deno.serve(async (request) => {
         content: `Extract only explicitly requested EV charger search filters from the user's text. Return exactly one JSON object with these keys: location (string or null), connector_type (string or null), minimum_power_kw (number or null), date (YYYY-MM-DD string or null), time (24-hour HH:mm string or null), maximum_price_per_unit (number or null, INR per kWh). Understand Kannada, Hindi and English. Convert explicit relative dates using today's date ${new Date().toISOString().slice(0, 10)}. Do not invent missing values, explanations, or markdown.`,
       },
       { role: 'user', content: body.query.trim() },
-    ], 250)
+    ], 1200)
     const jsonText = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
     const parsed = JSON.parse(jsonText) as Record<string, unknown>
     const filters = {

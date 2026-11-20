@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { ChargerMap } from '../../components/ChargerMap'
-import { SarvamSearch, type ChargerSearchFilters } from '../../components/SarvamSearch'
 import { useAuth } from '../../context/AuthContext'
 import { parsePoint, type Point } from '../../location'
 import { getDefaultVehicleId, setDefaultVehicleId } from '../../vehiclePreference'
@@ -11,6 +10,7 @@ import { supabase } from '../../supabase'
 type Provider = {
   id: string
   business_name: string
+  business_type: string | null
   address: string | null
   location: unknown
 }
@@ -32,6 +32,11 @@ type RoadDistanceResponse = {
   distances?: Array<Array<number | null>>
 }
 const fieldClass = 'rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:border-emerald-700 focus:ring-2 focus:ring-emerald-700/15'
+const businessTypes = [
+  { value: 'HOTEL', label: 'Hotel' },
+  { value: 'PUBLIC_PARKING', label: 'Public parking slot' },
+  { value: 'PRIVATE_HOME', label: 'Private home' },
+]
 
 function formatRoadDistance(distanceMeters: number): string {
   return distanceMeters < 1000
@@ -45,6 +50,7 @@ export default function FindChargerPage() {
   const [providers, setProviders] = useState<Provider[]>([])
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
   const [search, setSearch] = useState('')
+  const [businessTypeFilters, setBusinessTypeFilters] = useState<string[]>([])
   const [searchCenter, setSearchCenter] = useState<Point>({ lat: 20.5937, lng: 78.9629 })
   const [distanceOrigin, setDistanceOrigin] = useState<Point | null>(null)
   const [userLocation, setUserLocation] = useState<Point | null>(null)
@@ -52,7 +58,6 @@ export default function FindChargerPage() {
   const [roadDistanceStatus, setRoadDistanceStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [pickingLocation, setPickingLocation] = useState(false)
   const [locating, setLocating] = useState(false)
-  const [searchFilters, setSearchFilters] = useState<ChargerSearchFilters | null>(null)
   const [selectedChargerId, setSelectedChargerId] = useState('')
   const [vehicleId, setVehicleId] = useState('')
   const [startsAt, setStartsAt] = useState('')
@@ -66,7 +71,7 @@ export default function FindChargerPage() {
     setErrorMessage('')
     const [chargerResult, providerResult, vehicleResult] = await Promise.all([
       supabase.from('chargers').select('id,provider_id,name,charger_type,rated_power_kw,site_power_limit_kw,connector_type,price_per_kwh').eq('is_active', true),
-      supabase.from('providers').select('id,business_name,address,location'),
+      supabase.from('providers').select('id,business_name,business_type,address,location'),
       supabase.from('vehicles').select('id,brand,model,max_ac_kw,max_dc_kw').eq('owner_id', user.id),
     ])
 
@@ -159,25 +164,16 @@ export default function FindChargerPage() {
   }, [distanceOrigin, providers])
 
   const visibleChargers = useMemo(() => {
-    const hasStructuredFilters = Boolean(searchFilters && Object.values(searchFilters).some((value) => value !== null))
-    const term = hasStructuredFilters ? '' : search.trim().toLowerCase()
+    const term = search.trim().toLowerCase()
     const matchesSearch = term ? chargers.filter((charger) => {
       const provider = providers.find((item) => item.id === charger.provider_id)
-      return [charger.name, charger.charger_type, charger.connector_type, provider?.business_name, provider?.address]
+      return [charger.name, charger.charger_type, charger.connector_type, provider?.business_name, provider?.business_type, provider?.address]
         .some((value) => value?.toLowerCase().includes(term))
     }) : chargers
     const filteredChargers = matchesSearch.filter((charger) => {
       const provider = providers.find((item) => item.id === charger.provider_id)
-      const locationMatches = !searchFilters?.location
-        || [provider?.business_name, provider?.address]
-          .some((value) => value?.toLowerCase().includes(searchFilters.location!.toLowerCase()))
-      const connectorMatches = !searchFilters?.connector_type
-        || charger.connector_type.toLowerCase().includes(searchFilters.connector_type.toLowerCase())
-      const powerMatches = searchFilters?.minimum_power_kw == null
-        || Number(charger.rated_power_kw) >= searchFilters.minimum_power_kw
-      const priceMatches = searchFilters?.maximum_price_per_unit == null
-        || Number(charger.price_per_kwh) <= searchFilters.maximum_price_per_unit
-      return locationMatches && connectorMatches && powerMatches && priceMatches
+      const businessTypeMatches = !businessTypeFilters.length || businessTypeFilters.includes(provider?.business_type ?? '')
+      return businessTypeMatches
     })
     return filteredChargers.map((charger) => {
       const provider = providers.find((item) => item.id === charger.provider_id)
@@ -190,7 +186,7 @@ export default function FindChargerPage() {
     }).sort((first, second) => distanceOrigin
       ? (first.distance ?? Number.POSITIVE_INFINITY) - (second.distance ?? Number.POSITIVE_INFINITY)
       : 0)
-  }, [chargers, providers, search, searchFilters, distanceOrigin, roadDistances, roadDistanceStatus])
+  }, [chargers, providers, search, businessTypeFilters, distanceOrigin, roadDistances, roadDistanceStatus])
 
   const mappedChargers = useMemo(() => visibleChargers.flatMap(({ charger, point, distance }) => point ? [{
     charger,
@@ -378,21 +374,6 @@ export default function FindChargerPage() {
     ? null
     : estimatedEnergyMaxKwh * Number(selectedChargerDetails.charger.price_per_kwh)
 
-  function applySearch(query: string, filters: ChargerSearchFilters) {
-    setSearch(query)
-    setSearchFilters(filters)
-    if (filters.date) {
-      const start = new Date(`${filters.date}T${filters.time || '09:00'}`)
-      if (!Number.isNaN(start.getTime())) {
-        const end = new Date(start.getTime() + 60 * 60 * 1000)
-        const toLocalInput = (date: Date) => new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
-          .toISOString().slice(0, 16)
-        setStartsAt(toLocalInput(start))
-        setEndsAt(toLocalInput(end))
-      }
-    }
-  }
-
   return (
     <main className="min-h-screen bg-[#f7f9f6] px-6 py-8 text-slate-900">
       <div className="mx-auto max-w-6xl">
@@ -405,6 +386,33 @@ export default function FindChargerPage() {
         </header>
 
         <div className="mt-7 grid gap-3">
+          <label className="grid gap-2 text-sm font-medium text-slate-700 sm:max-w-sm">
+            Search chargers
+            <input
+              className={fieldClass}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search by name, connector, or location"
+              type="search"
+              value={search}
+            />
+          </label>
+          <fieldset className="grid gap-2 text-sm font-medium text-slate-700">
+            <legend>Host business type</legend>
+            <div className="flex flex-wrap gap-x-5 gap-y-2">
+              {businessTypes.map((type) => (
+                <label className="flex items-center gap-2" key={type.value}>
+                  <input
+                    checked={businessTypeFilters.includes(type.value)}
+                    onChange={(event) => setBusinessTypeFilters((current) => event.target.checked
+                      ? [...current, type.value]
+                      : current.filter((value) => value !== type.value))}
+                    type="checkbox"
+                  />
+                  {type.label}
+                </label>
+              ))}
+            </div>
+          </fieldset>
           <div className="flex flex-col gap-3 sm:flex-row">
             <button
               className={`rounded-full px-6 py-3 font-semibold text-white ${pickingLocation ? 'bg-fuchsia-700' : 'bg-slate-900'}`}
@@ -417,7 +425,6 @@ export default function FindChargerPage() {
               {locating ? 'Finding you...' : 'Use my location'}
             </button>
           </div>
-          <SarvamSearch onApply={applySearch} />
         </div>
 
         {pickingLocation && (
@@ -451,6 +458,16 @@ export default function FindChargerPage() {
                   <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">{selectedChargerDetails.charger.charger_type} charger · {selectedChargerDetails.charger.rated_power_kw} kW</p>
                   <h3 className="mt-2 text-xl font-semibold">{selectedChargerDetails.charger.name}</h3>
                   <p className="mt-1 text-slate-600">{selectedChargerDetails.provider?.business_name ?? 'Charging provider'}{selectedChargerDetails.provider?.address ? ` · ${selectedChargerDetails.provider.address}` : ''}</p>
+                  {selectedChargerDetails.provider?.business_type && (
+                    <p className="mt-1 text-sm font-medium text-slate-700">
+                      {businessTypes.find((type) => type.value === selectedChargerDetails.provider?.business_type)?.label ?? selectedChargerDetails.provider.business_type}
+                    </p>
+                  )}
+                  {selectedChargerDetails.provider?.business_type === 'PRIVATE_HOME' && (
+                    <p className="mt-2 text-sm text-slate-600">
+                      Approximate area only. The exact address and entry instructions are shared after the host accepts your booking.
+                    </p>
+                  )}
                   <p className="mt-2 text-sm font-medium text-emerald-800">
                     {selectedChargerDetails.distance === null
                       ? roadDistanceStatus === 'loading'

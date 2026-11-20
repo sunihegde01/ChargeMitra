@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { Button, LinkButton } from '../components/Button'
 import { supabase } from '../supabase'
 
 export default function LoginPage() {
@@ -33,20 +34,22 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#f7f9f6] px-6 py-12 text-slate-900">
-      <section className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 shadow-xl shadow-slate-900/5 sm:p-10">
-        <Link className="text-sm font-semibold text-emerald-700 hover:text-emerald-800" to="/">
-          ← ChargeMitra
+    <main className="flex min-h-screen items-center justify-center bg-warm-ivory px-4 py-8 text-graphite sm:px-6 sm:py-12">
+      <section className="w-full max-w-md rounded-[1.75rem] border border-sage-grey bg-white p-6 shadow-xl shadow-deep-forest/5 sm:p-10">
+        <Link aria-label="ChargeMitra home" className="inline-flex items-center gap-2 text-sm font-semibold text-deep-forest hover:text-emerald-800" to="/">
+          <span className="grid size-8 place-items-center rounded-lg bg-deep-forest text-xs font-bold text-electric-lime">C</span>
+          ChargeMitra
         </Link>
-        <h1 className="mt-8 text-3xl font-semibold tracking-tight">Welcome back</h1>
-        <p className="mt-2 text-slate-600">Log in to continue to your ChargeMitra account.</p>
+        <p className="mt-8 text-xs font-semibold uppercase tracking-[0.16em] text-deep-forest">Welcome back</p>
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight">Log in to ChargeMitra</h1>
+        <p className="mt-2 leading-6 text-slate-600">Continue to your account and pick up where you left off.</p>
 
         <form className="mt-8 flex flex-col gap-5" onSubmit={handleSubmit}>
           <label className="flex flex-col gap-2 text-sm font-medium">
             Email
             <input
               autoComplete="email"
-              className="rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-emerald-700 focus:ring-2 focus:ring-emerald-700/15"
+              className="cm-field"
               onChange={(event) => setEmail(event.target.value)}
               required
               type="email"
@@ -57,28 +60,24 @@ export default function LoginPage() {
             Password
             <input
               autoComplete="current-password"
-              className="rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-emerald-700 focus:ring-2 focus:ring-emerald-700/15"
+              className="cm-field"
               onChange={(event) => setPassword(event.target.value)}
               required
               type="password"
               value={password}
             />
           </label>
-          <button
-            className="mt-1 rounded-full bg-emerald-700 px-5 py-3 font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={loading}
-            type="submit"
-          >
+          <Button className="mt-1 w-full" disabled={loading} type="submit">
             {loading ? 'Logging in...' : 'Log in'}
-          </button>
+          </Button>
         </form>
 
-        {errorMessage && <p className="mt-5 text-sm text-red-700" role="alert">{errorMessage}</p>}
-        <p className="mt-7 text-sm text-slate-600">
-          New to ChargeMitra?{' '}
-          <Link className="font-semibold text-emerald-700 hover:underline" to="/register">
+        {errorMessage && <p className="mt-5 rounded-xl bg-red-50 p-4 text-sm text-red-800" role="alert">{errorMessage}</p>}
+        <p className="mt-7 flex flex-wrap items-center gap-x-1 gap-y-2 text-sm text-slate-600">
+          New to ChargeMitra?
+          <LinkButton className="min-h-9 px-3 py-1 text-sm" to="/register" variant="secondary">
             Create an account
-          </Link>
+          </LinkButton>
         </p>
       </section>
     </main>

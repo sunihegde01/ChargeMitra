@@ -25,10 +25,12 @@ type Booking = {
   estimated_total_max_snapshot: number | null
   payment_method: string | null
   charger_id: string
+  provider_id: string
 }
 
 type Charger = { id: string; name: string }
 type SessionLink = { id: string; booking_id: string }
+type AcceptedHomeDetails = { provider_id: string; street_address: string; city: string; state: string; pin_code: string; entry_instructions: string | null }
 
 type VehicleModelSpec = {
   model: string
@@ -130,6 +132,7 @@ export default function OwnerDashboard() {
   const [bookings, setBookings] = useState<Booking[]>([])
   const [chargers, setChargers] = useState<Charger[]>([])
   const [sessionsByBooking, setSessionsByBooking] = useState<Record<string, string>>({})
+  const [homeDetailsByProvider, setHomeDetailsByProvider] = useState<Record<string, AcceptedHomeDetails>>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
@@ -227,7 +230,7 @@ export default function OwnerDashboard() {
         .order('created_at', { ascending: false }),
       supabase
         .from('bookings')
-        .select('id,status,scheduled_start,scheduled_end,price_per_kwh_snapshot,estimated_total_snapshot,estimated_total_min_snapshot,estimated_total_max_snapshot,payment_method,charger_id')
+        .select('id,status,scheduled_start,scheduled_end,price_per_kwh_snapshot,estimated_total_snapshot,estimated_total_min_snapshot,estimated_total_max_snapshot,payment_method,charger_id,provider_id')
         .eq('owner_id', user.id)
         .order('created_at', { ascending: false }),
     ])
@@ -244,6 +247,24 @@ export default function OwnerDashboard() {
     const bookingRows = bookingsResult.data ?? []
     setVehicles(vehicleRows)
     setBookings(bookingRows)
+    setHomeDetailsByProvider({})
+    const acceptedProviderIds = [...new Set(bookingRows
+      .filter((booking) => booking.status === 'ACCEPTED')
+      .map((booking) => booking.provider_id))]
+    if (acceptedProviderIds.length) {
+      const { data: homeRows, error } = await supabase
+        .from('home_access_details')
+        .select('provider_id,street_address,city,state,pin_code,entry_instructions')
+        .in('provider_id', acceptedProviderIds)
+      if (error) setErrorMessage(`Could not load accepted home booking details: ${error.message}`)
+      else {
+        setHomeDetailsByProvider(Object.fromEntries(
+          ((homeRows ?? []) as AcceptedHomeDetails[]).map((details) => [details.provider_id, details]),
+        ))
+      }
+    } else {
+      setHomeDetailsByProvider({})
+    }
     const savedVehicleId = getDefaultVehicleId(user.id)
     const nextDefaultVehicleId = vehicleRows.some((vehicle) => vehicle.id === savedVehicleId)
       ? savedVehicleId
@@ -505,6 +526,24 @@ export default function OwnerDashboard() {
                       }
                     </p>
                     <p className="mt-1 text-sm text-slate-600">Payment: {booking.payment_method === 'PAY_AT_STATION' ? 'Pay at station (cash/UPI)' : booking.payment_method ?? 'Not recorded'}</p>
+                    {booking.status === 'ACCEPTED' && homeDetailsByProvider[booking.provider_id] && (
+                      <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                        <p className="font-semibold text-emerald-900">Private home address</p>
+                        <p className="mt-1 text-sm text-emerald-900">
+                          {[
+                            homeDetailsByProvider[booking.provider_id].street_address,
+                            homeDetailsByProvider[booking.provider_id].city,
+                            homeDetailsByProvider[booking.provider_id].state,
+                            homeDetailsByProvider[booking.provider_id].pin_code,
+                          ].filter(Boolean).join(', ')}
+                        </p>
+                        {homeDetailsByProvider[booking.provider_id].entry_instructions && (
+                          <p className="mt-2 text-sm text-emerald-900">
+                            Entry instructions: {homeDetailsByProvider[booking.provider_id].entry_instructions}
+                          </p>
+                        )}
+                      </div>
+                    )}
                     {sessionsByBooking[booking.id] && (
                       <Link className="mt-2 inline-flex text-sm font-semibold text-emerald-700 underline" to={`/session/${sessionsByBooking[booking.id]}`}>Open charging session</Link>
                     )}

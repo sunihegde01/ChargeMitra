@@ -30,9 +30,6 @@ export default function LandingPage() {
           <span className="text-xl font-bold tracking-tight">ChargeMitra</span>
         </Link>
         <nav aria-label="Main navigation" className="flex items-center gap-3">
-          <Link className="hidden rounded-full px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-white sm:inline-flex" to="/support">
-            Help & support
-          </Link>
           <Link className="rounded-full px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-white" to="/login">
             Sign in
           </Link>
@@ -152,11 +149,28 @@ export default function LandingPage() {
         </div>
       </section>
 
+      <section className="border-t border-slate-200 bg-[#f7f9f6]" aria-labelledby="who-can-host">
+        <div className="mx-auto max-w-7xl px-6 py-16 lg:px-10 lg:py-20">
+          <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Share your charging location</p>
+          <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl" id="who-can-host">Who can host?</h2>
+          <p className="mt-3 max-w-2xl leading-7 text-slate-600">
+            Hotels, public parking locations, and private homes can list EV chargers. Home hosts share only an approximate area until they accept a booking.
+          </p>
+          <div className="mt-7 flex flex-wrap gap-3">
+            <span className="rounded-full border border-slate-200 bg-white px-5 py-3 font-semibold">Hotel</span>
+            <span className="rounded-full border border-slate-200 bg-white px-5 py-3 font-semibold">Public Parking Spot</span>
+            <span className="rounded-full border border-slate-200 bg-white px-5 py-3 font-semibold">Private Home</span>
+            <Link className="rounded-full bg-emerald-700 px-5 py-3 font-semibold text-white" to="/register?type=host">
+              Become a host
+            </Link>
+          </div>
+        </div>
+      </section>
+
       <footer className="mx-auto flex max-w-7xl flex-col gap-3 px-6 py-7 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between lg:px-10">
         <p>© {currentYear} ChargeMitra</p>
         <div className="flex flex-wrap items-center gap-4">
           <p>Helping every EV journey find its next charge.</p>
-          <Link className="font-semibold text-emerald-700 hover:underline" to="/support">Help & support</Link>
         </div>
       </footer>
     </main>

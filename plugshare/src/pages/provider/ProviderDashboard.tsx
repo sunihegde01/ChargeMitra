@@ -3,21 +3,29 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../supabase'
 
-type Provider = { id: string; business_name: string; category: string; address: string | null; verified: boolean }
+type Provider = { id: string; business_name: string; business_type: string | null; address: string | null; verified: boolean }
 type Charger = { id: string; name: string; charger_type: string; rated_power_kw: number; price_per_kwh: number; is_active: boolean; has_dedicated_meter: boolean }
 type CalculationMethod = 'METER_BASED' | 'TIME_BASED'
 type Booking = { id: string; charger_id: string; status: string; scheduled_start: string; scheduled_end: string; price_per_kwh_snapshot: number; estimated_total_snapshot: number | null; estimated_total_min_snapshot: number | null; estimated_total_max_snapshot: number | null; payment_method: string | null; calculation_method: CalculationMethod | null }
 type SessionLink = { id: string; booking_id: string }
 
+const businessTypes = [
+  { value: 'HOTEL', label: 'Hotel' },
+  { value: 'PUBLIC_PARKING', label: 'Public parking slot' },
+  { value: 'PRIVATE_HOME', label: 'Private home' },
+]
+
 export default function ProviderDashboard() {
   const { user, signOut } = useAuth()
   const [provider, setProvider] = useState<Provider | null>(null)
+  const [businessType, setBusinessType] = useState('')
   const [chargers, setChargers] = useState<Charger[]>([])
   const [bookings, setBookings] = useState<Booking[]>([])
   const [sessionsByBooking, setSessionsByBooking] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [savingBookingId, setSavingBookingId] = useState('')
   const [savingChargerId, setSavingChargerId] = useState('')
+  const [savingBusinessType, setSavingBusinessType] = useState(false)
   const [calculationMethods, setCalculationMethods] = useState<Record<string, CalculationMethod | ''>>({})
   const [errorMessage, setErrorMessage] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
@@ -28,7 +36,7 @@ export default function ProviderDashboard() {
     setErrorMessage('')
     const { data: providerRow, error: providerError } = await supabase
       .from('providers')
-      .select('id,business_name,category,address,verified')
+      .select('id,business_name,business_type,address,verified')
       .eq('profile_id', user.id)
       .maybeSingle()
 
@@ -45,6 +53,7 @@ export default function ProviderDashboard() {
       return
     }
     setProvider(providerRow)
+    setBusinessType(businessTypes.some((type) => type.value === providerRow.business_type) ? providerRow.business_type ?? '' : '')
 
     const [chargerResult, bookingResult] = await Promise.all([
       supabase.from('chargers').select('id,name,charger_type,rated_power_kw,price_per_kwh,is_active,has_dedicated_meter').eq('provider_id', providerRow.id).order('created_at', { ascending: false }),
@@ -55,6 +64,15 @@ export default function ProviderDashboard() {
     } else {
       setChargers(chargerResult.data ?? [])
       setBookings(bookingResult.data ?? [])
+      if (providerRow.business_type === 'PRIVATE_HOME') {
+        setCalculationMethods((current) => {
+          const next = { ...current }
+          for (const booking of bookingResult.data ?? []) {
+            if (booking.status === 'PENDING' && !next[booking.id]) next[booking.id] = 'TIME_BASED'
+          }
+          return next
+        })
+      }
       const bookingIds = (bookingResult.data ?? []).map((booking) => booking.id)
       if (bookingIds.length) {
         const { data: sessionRows, error } = await supabase
@@ -130,6 +148,30 @@ export default function ProviderDashboard() {
     setSavingChargerId('')
   }
 
+  async function saveBusinessType() {
+    if (!provider || !user || !businessType) return
+    setSavingBusinessType(true)
+    setErrorMessage('')
+    setSuccessMessage('')
+    const { data, error } = await supabase
+      .from('providers')
+      .update({ business_type: businessType })
+      .eq('id', provider.id)
+      .eq('profile_id', user.id)
+      .select('business_type')
+      .maybeSingle()
+
+    if (error) {
+      setErrorMessage(`Could not save your business type: ${error.message}`)
+    } else if (!data) {
+      setErrorMessage('Could not save your business type. Check that your database permissions are up to date.')
+    } else {
+      setProvider({ ...provider, business_type: data.business_type })
+      setSuccessMessage('Business type saved.')
+    }
+    setSavingBusinessType(false)
+  }
+
   return (
     <main className="min-h-screen bg-[#f7f9f6] px-6 py-8 text-slate-900">
       <div className="mx-auto max-w-5xl">
@@ -160,11 +202,32 @@ export default function ProviderDashboard() {
               <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h2 className="text-2xl font-semibold">{provider.business_name}</h2>
-                  <p className="mt-1 text-slate-600">{provider.category}{provider.address ? ` · ${provider.address}` : ''}</p>
+                  {provider.address && <p className="mt-1 text-slate-600">{provider.address}</p>}
                 </div>
                 <span className={`rounded-full px-4 py-2 text-sm font-semibold ${provider.verified ? 'bg-emerald-50 text-emerald-800' : 'bg-amber-50 text-amber-800'}`}>
                   {provider.verified ? 'Verified' : 'Verification pending'}
                 </span>
+              </div>
+              <div className="mt-5 grid gap-3 sm:max-w-md sm:grid-cols-[1fr_auto] sm:items-end">
+                <label className="grid gap-2 text-sm font-medium text-slate-700">
+                  What is your business type?
+                  <select
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:border-emerald-700 focus:ring-2 focus:ring-emerald-700/15"
+                    onChange={(event) => setBusinessType(event.target.value)}
+                    value={businessType}
+                  >
+                    <option value="">Choose a business type</option>
+                    {businessTypes.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
+                  </select>
+                </label>
+                <button
+                  className="rounded-full bg-emerald-700 px-5 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={!businessType || businessType === provider.business_type || savingBusinessType}
+                  onClick={() => void saveBusinessType()}
+                  type="button"
+                >
+                  {savingBusinessType ? 'Saving...' : 'Save business type'}
+                </button>
               </div>
             </section>
 
@@ -233,7 +296,9 @@ export default function ProviderDashboard() {
                               {chargers.find((charger) => charger.id === booking.charger_id)?.has_dedicated_meter && (
                                 <option value="METER_BASED">ACTUAL — Dedicated EV meter</option>
                               )}
-                              <option value="TIME_BASED">ESTIMATED — Charging time</option>
+                              <option value="TIME_BASED">
+                                ESTIMATED — Charging time{provider?.business_type === 'PRIVATE_HOME' ? ' (default for private homes)' : ''}
+                              </option>
                             </select>
                           </label>
                           <div className="flex gap-2">

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Button, LinkButton } from '../components/Button'
 import { supabase } from '../supabase'
 
 export default function RegisterPage() {
@@ -37,7 +38,7 @@ export default function RegisterPage() {
         setErrorMessage(
           message.includes('database error saving new user')
             || message.includes('handle_new_auth_user')
-            ? 'Supabase could not create your account profile. Run plugshare/supabase-fix.sql once in your Supabase SQL Editor, then try registering again.'
+            ? 'Supabase could not create your account profile. Run supabase-fix.sql once in your Supabase SQL Editor, then try registering again.'
             : error.message,
         )
       } else if (data.user && !data.session) {
@@ -57,87 +58,95 @@ export default function RegisterPage() {
   }
 
   return (
-    <main className="mx-auto max-w-md p-8">
-      <h1 className="mb-6 text-2xl font-semibold">Create an account</h1>
-      <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
-        <fieldset className="grid grid-cols-2 gap-3">
-          <legend className="mb-2 text-sm font-medium">Create an account as</legend>
-          <button
-            aria-pressed={accountType === 'EV_OWNER'}
-            className={`rounded-xl border p-3 text-left ${accountType === 'EV_OWNER' ? 'border-emerald-700 bg-emerald-50' : 'border-slate-300'}`}
-            onClick={() => setAccountType('EV_OWNER')}
-            type="button"
-          >
-            <span className="block font-semibold">EV user</span>
-            <span className="text-xs text-slate-600">Find chargers</span>
-          </button>
-          <button
-            aria-pressed={accountType === 'PROVIDER'}
-            className={`rounded-xl border p-3 text-left ${accountType === 'PROVIDER' ? 'border-emerald-700 bg-emerald-50' : 'border-slate-300'}`}
-            onClick={() => setAccountType('PROVIDER')}
-            type="button"
-          >
-            <span className="block font-semibold">Charging host</span>
-            <span className="text-xs text-slate-600">List chargers</span>
-          </button>
-        </fieldset>
-        <label className="flex flex-col gap-1">
-          Full name
-          <input
-            autoComplete="name"
-            className="rounded border px-3 py-2"
-            required
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-          />
-        </label>
-        <label className="flex flex-col gap-1">
-          Phone
-          <input
-            autoComplete="tel"
-            className="rounded border px-3 py-2"
-            type="tel"
-            required
-            value={phone}
-            onChange={(event) => setPhone(event.target.value)}
-          />
-        </label>
-        <label className="flex flex-col gap-1">
-          Email
-          <input
-            autoComplete="email"
-            className="rounded border px-3 py-2"
-            type="email"
-            required
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-          />
-        </label>
-        <label className="flex flex-col gap-1">
-          Password
-          <input
-            autoComplete="new-password"
-            className="rounded border px-3 py-2"
-            type="password"
-            minLength={6}
-            required
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-          />
-        </label>
-        <button
-          className="rounded bg-emerald-700 px-4 py-2 font-semibold text-white disabled:opacity-60"
-          disabled={loading}
-          type="submit"
-        >
-          {loading ? 'Creating account...' : 'Create account'}
-        </button>
-      </form>
-      {errorMessage && <p className="mt-4 text-red-700" role="alert">{errorMessage}</p>}
-      {successMessage && <p className="mt-4 text-emerald-700" role="status">{successMessage}</p>}
-      <p className="mt-6">
-        Already have an account? <Link className="text-emerald-700 underline" to={`/login?type=${accountType === 'PROVIDER' ? 'host' : 'owner'}`}>Log in</Link>
-      </p>
+    <main className="flex min-h-screen items-center justify-center bg-warm-ivory px-4 py-8 text-graphite sm:px-6 sm:py-12">
+      <section className="w-full max-w-lg rounded-[1.75rem] border border-sage-grey bg-white p-6 shadow-xl shadow-deep-forest/5 sm:p-10">
+        <Link aria-label="ChargeMitra home" className="inline-flex items-center gap-2 text-sm font-semibold text-deep-forest hover:text-emerald-800" to="/">
+          <span className="grid size-8 place-items-center rounded-lg bg-deep-forest text-xs font-bold text-electric-lime">C</span>
+          ChargeMitra
+        </Link>
+        <p className="mt-8 text-xs font-semibold uppercase tracking-[0.16em] text-deep-forest">Join the charging community</p>
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight">Create an account</h1>
+        <p className="mt-2 leading-6 text-slate-600">One account for finding chargers or sharing yours.</p>
+
+        <form className="mt-7 flex flex-col gap-5" onSubmit={handleSubmit}>
+          <fieldset className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <legend className="mb-2 text-sm font-semibold">Create an account as</legend>
+            <button
+              aria-pressed={accountType === 'EV_OWNER'}
+              className={`min-h-16 rounded-2xl border p-4 text-left transition hover:border-deep-forest focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-deep-forest ${accountType === 'EV_OWNER' ? 'border-deep-forest bg-warm-ivory' : 'border-slate-300 bg-white'}`}
+              onClick={() => setAccountType('EV_OWNER')}
+              type="button"
+            >
+              <span className="block font-semibold">EV user</span>
+              <span className="text-xs text-slate-600">Find chargers</span>
+            </button>
+            <button
+              aria-pressed={accountType === 'PROVIDER'}
+              className={`min-h-16 rounded-2xl border p-4 text-left transition hover:border-deep-forest focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-deep-forest ${accountType === 'PROVIDER' ? 'border-deep-forest bg-warm-ivory' : 'border-slate-300 bg-white'}`}
+              onClick={() => setAccountType('PROVIDER')}
+              type="button"
+            >
+              <span className="block font-semibold">Charging host</span>
+              <span className="text-xs text-slate-600">List chargers</span>
+            </button>
+          </fieldset>
+          <label className="flex flex-col gap-2 text-sm font-medium">
+            Full name
+            <input
+              autoComplete="name"
+              className="cm-field"
+              required
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+            />
+          </label>
+          <label className="flex flex-col gap-2 text-sm font-medium">
+            Phone
+            <input
+              autoComplete="tel"
+              className="cm-field"
+              type="tel"
+              required
+              value={phone}
+              onChange={(event) => setPhone(event.target.value)}
+            />
+          </label>
+          <label className="flex flex-col gap-2 text-sm font-medium">
+            Email
+            <input
+              autoComplete="email"
+              className="cm-field"
+              type="email"
+              required
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+            />
+          </label>
+          <label className="flex flex-col gap-2 text-sm font-medium">
+            Password
+            <input
+              autoComplete="new-password"
+              className="cm-field"
+              type="password"
+              minLength={6}
+              required
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+            />
+          </label>
+          <Button className="w-full" disabled={loading} type="submit">
+            {loading ? 'Creating account...' : 'Create account'}
+          </Button>
+        </form>
+        {errorMessage && <p className="mt-5 rounded-xl bg-red-50 p-4 text-sm text-red-800" role="alert">{errorMessage}</p>}
+        {successMessage && <p className="mt-5 rounded-xl bg-emerald-50 p-4 text-sm text-emerald-900" role="status">{successMessage}</p>}
+        <p className="mt-7 flex flex-wrap items-center gap-x-1 gap-y-2 text-sm text-slate-600">
+          Already have an account?
+          <LinkButton className="min-h-9 px-3 py-1 text-sm" to={`/login?type=${accountType === 'PROVIDER' ? 'host' : 'owner'}`} variant="secondary">
+            Log in
+          </LinkButton>
+        </p>
+      </section>
     </main>
   )
 }

@@ -4,11 +4,19 @@ import { useAuth } from '../context/AuthContext'
 import { supabase } from '../supabase'
 
 type ProfileRole = 'EV_OWNER' | 'PROVIDER' | 'BOTH'
+type BusinessType = 'HOTEL' | 'PUBLIC_PARKING' | 'PRIVATE_HOME'
+
+const hostBusinessTypes = [
+  { value: 'HOTEL', label: 'Hotel', description: 'A hotel or lodging business with charging available to guests.' },
+  { value: 'PUBLIC_PARKING', label: 'Public parking slot', description: 'A parking location open to public drivers.' },
+  { value: 'PRIVATE_HOME', label: 'Private home', description: 'Share a home charger while keeping your exact address private until a booking is accepted.' },
+] as const
 
 export default function AccountTypePage() {
   const { user, signOut } = useAuth()
   const navigate = useNavigate()
   const [profileRole, setProfileRole] = useState<ProfileRole | null>(null)
+  const [choosingHostType, setChoosingHostType] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
@@ -41,14 +49,13 @@ export default function AccountTypePage() {
     return () => { active = false }
   }, [user])
 
-  async function chooseAccountType(type: 'owner' | 'host') {
+  async function chooseAccountType() {
     if (!user || !profileRole) return
     setSaving(true)
     setErrorMessage('')
 
-    const requiredRole = type === 'owner' ? 'EV_OWNER' : 'PROVIDER'
     try {
-      if (profileRole !== 'BOTH' && profileRole !== requiredRole) {
+      if (profileRole !== 'BOTH' && profileRole !== 'EV_OWNER') {
         const { data, error } = await supabase
           .from('profiles')
           .update({ role: 'BOTH' })
@@ -67,9 +74,42 @@ export default function AccountTypePage() {
         setProfileRole('BOTH')
       }
 
-      navigate(type === 'host' ? '/provider/dashboard' : '/owner/dashboard', { replace: true })
+      navigate('/owner/dashboard', { replace: true })
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Could not open this account type.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function chooseHostBusinessType(businessType: BusinessType) {
+    if (!user || !profileRole) return
+    setSaving(true)
+    setErrorMessage('')
+
+    try {
+      if (profileRole !== 'BOTH' && profileRole !== 'PROVIDER') {
+        const { data, error } = await supabase
+          .from('profiles')
+          .update({ role: 'BOTH' })
+          .eq('id', user.id)
+          .select('id')
+          .single()
+
+        if (error) {
+          setErrorMessage(`Could not enable host access: ${error.message}`)
+          return
+        }
+        if (!data) {
+          setErrorMessage('Host access could not be enabled. Please try again.')
+          return
+        }
+        setProfileRole('BOTH')
+      }
+
+      navigate(`/host/onboarding?type=${businessType}`, { replace: true })
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Could not open the host section.')
     } finally {
       setSaving(false)
     }
@@ -99,12 +139,12 @@ export default function AccountTypePage() {
         {loading && <p className="mt-8 text-slate-600">Loading your account...</p>}
         {errorMessage && <p className="mt-6 rounded-xl bg-red-50 p-4 text-sm text-red-800" role="alert">{errorMessage}</p>}
 
-        {!loading && profileRole && (
+        {!loading && profileRole && !choosingHostType && (
           <div className="mt-8 grid gap-4 sm:grid-cols-2">
             <button
               className="rounded-2xl border border-slate-200 p-6 text-left transition hover:-translate-y-0.5 hover:border-emerald-600 hover:bg-emerald-50 disabled:opacity-60"
               disabled={saving}
-              onClick={() => void chooseAccountType('owner')}
+              onClick={() => void chooseAccountType()}
               type="button"
             >
               <span aria-hidden="true" className="grid size-12 place-items-center rounded-xl bg-emerald-100 text-2xl text-emerald-800">⚡</span>
@@ -115,7 +155,7 @@ export default function AccountTypePage() {
             <button
               className="rounded-2xl border border-slate-200 p-6 text-left transition hover:-translate-y-0.5 hover:border-emerald-600 hover:bg-emerald-50 disabled:opacity-60"
               disabled={saving}
-              onClick={() => void chooseAccountType('host')}
+              onClick={() => setChoosingHostType(true)}
               type="button"
             >
               <span aria-hidden="true" className="grid size-12 place-items-center rounded-xl bg-emerald-100 text-2xl text-emerald-800">⌂</span>
@@ -124,6 +164,35 @@ export default function AccountTypePage() {
               <span className="mt-5 block font-semibold text-emerald-800">Continue as host →</span>
             </button>
           </div>
+        )}
+
+        {!loading && profileRole && choosingHostType && (
+          <section className="mt-8" aria-labelledby="host-business-type-heading">
+            <h2 className="text-xl font-semibold" id="host-business-type-heading">What is your business type?</h2>
+            <p className="mt-2 text-sm text-slate-600">Choose the type of host location you want to list.</p>
+            <div className="mt-5 grid gap-4 sm:grid-cols-3">
+              {hostBusinessTypes.map((type) => (
+                <button
+                  className="rounded-2xl border border-slate-200 p-6 text-left transition hover:-translate-y-0.5 hover:border-emerald-600 hover:bg-emerald-50 disabled:opacity-60"
+                  disabled={saving}
+                  key={type.value}
+                  onClick={() => void chooseHostBusinessType(type.value)}
+                  type="button"
+                >
+                  <span className="block text-lg font-semibold">{type.label}</span>
+                  <span className="mt-2 block text-sm leading-6 text-slate-600">{type.description}</span>
+                </button>
+              ))}
+            </div>
+            <button
+              className="mt-5 text-sm font-semibold text-slate-600 underline"
+              disabled={saving}
+              onClick={() => setChoosingHostType(false)}
+              type="button"
+            >
+              Back
+            </button>
+          </section>
         )}
 
         {saving && <p className="mt-4 text-sm text-slate-600" role="status">Opening your account...</p>}

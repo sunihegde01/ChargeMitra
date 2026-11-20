@@ -8,8 +8,8 @@ import OwnerDashboard from './pages/owner/OwnerDashboard'
 import FindChargerPage from './pages/owner/FindChargerPage'
 import ProviderDashboard from './pages/provider/ProviderDashboard'
 import AddChargerPage from './pages/provider/AddChargerPage'
+import HostOnboardingPage from './pages/provider/HostOnboardingPage'
 import ActiveSessionPage from './pages/shared/ActiveSessionPage'
-import SupportPage from './pages/SupportPage'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth()
@@ -24,7 +24,6 @@ export default function App() {
       <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
-      <Route path="/support" element={<SupportPage />} />
       <Route path="/account-type" element={
         <ProtectedRoute><AccountTypePage /></ProtectedRoute>
       } />
@@ -38,6 +37,9 @@ export default function App() {
 
       <Route path="/provider/dashboard" element={
         <ProtectedRoute><ProviderDashboard /></ProtectedRoute>
+      } />
+      <Route path="/host/onboarding" element={
+        <ProtectedRoute><HostOnboardingPage /></ProtectedRoute>
       } />
       <Route path="/provider/chargers/new" element={
         <ProtectedRoute><AddChargerPage /></ProtectedRoute>

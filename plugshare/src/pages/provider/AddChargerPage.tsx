@@ -4,14 +4,18 @@ import { Link, useNavigate } from 'react-router-dom'
 import Map, { Marker, NavigationControl } from 'react-map-gl/maplibre'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { MAP_STYLE } from '../../mapStyle'
-import { parsePoint } from '../../location'
+import { parsePoint, reverseGeocode } from '../../location'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../supabase'
 
-type Provider = { id: string; business_name: string; category: string; address: string | null }
+type Provider = { id: string; business_name: string; business_type: string | null; address: string | null; location: unknown }
 
 const fieldClass = 'w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:border-emerald-700 focus:ring-2 focus:ring-emerald-700/15'
-const categories = ['HOME', 'APARTMENT', 'OFFICE', 'COMMERCIAL', 'OTHER']
+const businessTypes = [
+  { value: 'HOTEL', label: 'Hotel' },
+  { value: 'PUBLIC_PARKING', label: 'Public parking slot' },
+  { value: 'PRIVATE_HOME', label: 'Private home' },
+]
 const defaultMapView = { latitude: 20.5937, longitude: 78.9629, zoom: 4 }
 
 export default function AddChargerPage() {
@@ -19,7 +23,7 @@ export default function AddChargerPage() {
   const navigate = useNavigate()
   const [provider, setProvider] = useState<Provider | null>(null)
   const [businessName, setBusinessName] = useState('')
-  const [category, setCategory] = useState('COMMERCIAL')
+  const [businessType, setBusinessType] = useState('')
   const [address, setAddress] = useState('')
   const [latitude, setLatitude] = useState('')
   const [longitude, setLongitude] = useState('')
@@ -31,7 +35,11 @@ export default function AddChargerPage() {
   const [power, setPower] = useState('')
   const [sitePowerLimit, setSitePowerLimit] = useState('')
   const [connector, setConnector] = useState('Type 2')
+  const [cableDetails, setCableDetails] = useState('')
+  const [bayLabel, setBayLabel] = useState('')
+  const [photoUrls, setPhotoUrls] = useState('')
   const [price, setPrice] = useState('')
+  const [isAvailable, setIsAvailable] = useState(true)
   const [hasMeter, setHasMeter] = useState(false)
   const [loading, setLoading] = useState(false)
   const [locating, setLocating] = useState(false)
@@ -46,7 +54,7 @@ export default function AddChargerPage() {
       if (!user) return
       const { data, error } = await supabase
         .from('providers')
-        .select('id,business_name,category,address,location')
+        .select('id,business_name,business_type,address,location')
         .eq('profile_id', user.id)
         .maybeSingle()
       if (!active) return
@@ -54,7 +62,9 @@ export default function AddChargerPage() {
       else if (data) {
         setProvider(data)
         setBusinessName(data.business_name)
-        setCategory(data.category)
+        if (businessTypes.some((type) => type.value === data.business_type)) {
+          setBusinessType(data.business_type ?? '')
+        }
         setAddress(data.address ?? '')
         const point = parsePoint(data.location)
         if (point) {
@@ -84,26 +94,9 @@ export default function AddChargerPage() {
     }))
 
     try {
-      const query = new URLSearchParams({ lat: String(latitude), lon: String(longitude) })
-      const response = await fetch(`https://photon.komoot.io/reverse?${query}`)
-      if (!response.ok) throw new Error(`Address lookup failed (${response.status}).`)
-      const result = await response.json() as {
-        features?: Array<{ properties?: Record<string, unknown> }>
-      }
-      const properties = result.features?.[0]?.properties
-      const addressParts = properties
-        ? [
-            properties.name,
-            [properties.housenumber, properties.street].filter((part) => typeof part === 'string').join(' '),
-            properties.postcode,
-            properties.city,
-            properties.state,
-            properties.country,
-          ].filter((part): part is string => typeof part === 'string' && part.length > 0)
-        : []
-      const uniqueParts = [...new Set(addressParts)]
-      setAddress(uniqueParts.join(', '))
-      setSuccessMessage(uniqueParts.length
+      const result = await reverseGeocode({ lat: latitude, lng: longitude })
+      setAddress(result.formattedAddress)
+      setSuccessMessage(result.formattedAddress
         ? 'Location selected and address filled in.'
         : 'Location selected. No address was found; the map pin will be saved.')
     } catch {
@@ -160,6 +153,23 @@ export default function AddChargerPage() {
         setErrorMessage('Select the charging point location by clicking the map or using your current location.')
         return
       }
+      const photos = photoUrls.split(/\r?\n/).map((photo) => photo.trim()).filter(Boolean)
+      if (photos.some((photo) => {
+        try {
+          const url = new URL(photo)
+          return url.protocol !== 'https:' && url.protocol !== 'http:'
+        } catch {
+          return true
+        }
+      })) {
+        setErrorMessage('Enter each charger photo as a valid http or https URL.')
+        return
+      }
+
+      if (businessType === 'PRIVATE_HOME' && !provider) {
+        setErrorMessage('Complete Private Home onboarding before adding a charger.')
+        return
+      }
 
       if (!providerId) {
         if (!businessName.trim()) {
@@ -169,9 +179,10 @@ export default function AddChargerPage() {
         const { data, error } = await supabase.from('providers').insert({
           profile_id: user.id,
           business_name: businessName.trim(),
-          category,
+          business_type: businessType,
           address: address.trim() || null,
           location: `SRID=4326;POINT(${lng} ${lat})`,
+          location_geog: `SRID=4326;POINT(${lng} ${lat})`,
         }).select('id').single()
         if (error || !data?.id) {
           setErrorMessage(error?.message ?? 'Provider profile was created without returning an ID.')
@@ -179,7 +190,13 @@ export default function AddChargerPage() {
         }
         const newProviderId = data.id
         providerId = newProviderId
-        setProvider({ id: newProviderId, business_name: businessName.trim(), category, address: address.trim() || null })
+        setProvider({
+          id: newProviderId,
+          business_name: businessName.trim(),
+          business_type: businessType,
+          address: address.trim() || null,
+          location: `SRID=4326;POINT(${lng} ${lat})`,
+        })
 
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
@@ -204,16 +221,28 @@ export default function AddChargerPage() {
         return
       }
 
-      const { error: locationError } = await supabase
-        .from('providers')
-        .update({
-          address: address.trim() || null,
-          location: `SRID=4326;POINT(${lng} ${lat})`,
-        })
-        .eq('id', providerId)
-      if (locationError) {
-        setErrorMessage(`Could not save the charging point location: ${locationError.message}`)
-        return
+      let chargerLocation = { lat, lng }
+      if (businessType === 'PRIVATE_HOME') {
+        const approximateLocation = provider ? parsePoint(provider.location) : null
+        if (!approximateLocation) {
+          setErrorMessage('The approximate home area is missing. Update your Private Home location before adding a charger.')
+          return
+        }
+        chargerLocation = approximateLocation
+      } else {
+        const { error: locationError } = await supabase
+          .from('providers')
+          .update({
+            business_type: businessType,
+            address: address.trim() || null,
+            location: `SRID=4326;POINT(${lng} ${lat})`,
+            location_geog: `SRID=4326;POINT(${lng} ${lat})`,
+          })
+          .eq('id', providerId)
+        if (locationError) {
+          setErrorMessage(`Could not save the charging point location: ${locationError.message}`)
+          return
+        }
       }
 
       const { error } = await supabase.from('chargers').insert({
@@ -223,9 +252,13 @@ export default function AddChargerPage() {
         rated_power_kw: Number(power),
         site_power_limit_kw: sitePowerLimit ? Number(sitePowerLimit) : null,
         connector_type: connector.trim(),
+        cable_details: cableDetails.trim() || null,
+        bay_label: bayLabel.trim() || null,
+        photos,
+        location_geog: `SRID=4326;POINT(${chargerLocation.lng} ${chargerLocation.lat})`,
         price_per_kwh: Number(price),
         has_dedicated_meter: hasMeter,
-        is_active: true,
+        is_active: isAvailable,
       })
       if (error) {
         setErrorMessage(`Provider profile is saved, but the charger could not be added: ${error.message}`)
@@ -259,13 +292,14 @@ export default function AddChargerPage() {
                 Business name
                 <input className={fieldClass} onChange={(event) => setBusinessName(event.target.value)} required value={businessName} />
               </label>
-              <label className="flex flex-col gap-2 text-sm font-medium">
-                Location category
-                <select className={fieldClass} onChange={(event) => setCategory(event.target.value)} value={category}>
-                  {categories.map((item) => <option key={item} value={item}>{item}</option>)}
-                </select>
-              </label>
             </>}
+            <label className="flex flex-col gap-2 text-sm font-medium sm:col-span-2">
+              What type of business is this location?
+              <select className={fieldClass} disabled={Boolean(provider)} onChange={(event) => setBusinessType(event.target.value)} required value={businessType}>
+                <option value="">Choose a business type</option>
+                {businessTypes.filter((type) => provider || type.value !== 'PRIVATE_HOME').map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
+              </select>
+            </label>
             <label className="flex flex-col gap-2 text-sm font-medium sm:col-span-2">
               Charging point address (optional)
               <input className={fieldClass} onChange={(event) => setAddress(event.target.value)} placeholder="Filled automatically when a map location is selected" value={address} />
@@ -324,7 +358,9 @@ export default function AddChargerPage() {
               <p className={`mt-2 text-sm ${pickingOnMap ? 'font-semibold text-amber-800' : 'text-slate-600'}`}>
                 {pickingOnMap
                   ? 'Click the map to place the yellow pin exactly where your charging point is located.'
-                  : 'Drag the map to explore and zoom in for a precise location. This is the host location shown to users for its charging points.'}
+                  : businessType === 'PRIVATE_HOME'
+                    ? 'For privacy, drivers see only the approximate home area until their booking is accepted.'
+                    : 'Drag the map to explore and zoom in for a precise location. This is the host location shown to users for its charging points.'}
               </p>
             </div>
             <label className="flex flex-col gap-2 text-sm font-medium sm:col-span-2">
@@ -352,8 +388,27 @@ export default function AddChargerPage() {
               <input className={fieldClass} onChange={(event) => setConnector(event.target.value)} required value={connector} />
             </label>
             <label className="flex flex-col gap-2 text-sm font-medium">
+              Cable details
+              <input className={fieldClass} onChange={(event) => setCableDetails(event.target.value)} placeholder="Cable length, tethered or socket" value={cableDetails} />
+            </label>
+            <label className="flex flex-col gap-2 text-sm font-medium">
+              Bay label
+              <input className={fieldClass} onChange={(event) => setBayLabel(event.target.value)} placeholder="Bay 3, Level B1" value={bayLabel} />
+            </label>
+            <label className="flex flex-col gap-2 text-sm font-medium">
               Price per kWh (₹)
               <input className={fieldClass} min="0.01" onChange={(event) => setPrice(event.target.value)} required step="0.01" type="number" value={price} />
+            </label>
+            <label className="flex flex-col gap-2 text-sm font-medium">
+              Availability
+              <select className={fieldClass} onChange={(event) => setIsAvailable(event.target.value === 'available')} value={isAvailable ? 'available' : 'unavailable'}>
+                <option value="available">Available</option>
+                <option value="unavailable">Unavailable</option>
+              </select>
+            </label>
+            <label className="flex flex-col gap-2 text-sm font-medium sm:col-span-2">
+              Charger photo URLs (optional, one URL per line)
+              <textarea className={fieldClass} onChange={(event) => setPhotoUrls(event.target.value)} rows={3} value={photoUrls} />
             </label>
             <label className="flex items-center gap-3 text-sm font-medium sm:col-span-2">
               <input checked={hasMeter} onChange={(event) => setHasMeter(event.target.checked)} type="checkbox" />

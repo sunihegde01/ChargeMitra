@@ -1,129 +1,101 @@
 # ChargeMitra Design System
 
-This document describes the visual system for the existing ChargeMitra React application. Treat the current routes and components as the source of truth; extend them rather than creating duplicate pages or replacing working flows.
+This document records the visual conventions used by the current ChargeMitra frontend. The existing React routes and components are the source of truth; extend them rather than rebuilding the app around a predetermined page list.
 
 ## Brand
 
-- Product name in user-facing UI: **ChargeMitra**.
-- The identity should feel trustworthy, accessible, community-led, and focused on electric mobility.
-- Keep existing backend identifiers, repository names, and environment variable names unchanged when they are not user-facing.
-- Preserve the established green-and-neutral direction. The palette below is the preferred token set; existing pages may still contain legacy Emerald utility classes and should be migrated only when those pages are otherwise being changed.
+- Product name: **ChargeMitra**. Use this spelling in visible UI, page titles, and new documentation.
+- Brand character: dependable, welcoming, accessible, community-led electric mobility.
+- Keep existing project, package, database, and backend identifiers unchanged unless a separate task specifically requires otherwise.
+- Preserve the current light, nature-inspired ChargeMitra treatment. Do not introduce the alternate palette as an uncoordinated second theme.
 
 ## Color palette
 
-| Token | Hex | Use |
-| --- | --- | --- |
-| Deep Forest | `#173B32` | Primary actions, key headings, focus accents |
-| Electric Lime | `#C7F36B` | Small highlights and selected accents |
-| Warm Ivory | `#F5F3EB` | Page backgrounds and quiet surfaces |
-| White | `#FFFFFF` | Form and content surfaces |
-| Graphite | `#202923` | Main text |
-| Sage Grey | `#DCE4DA` | Borders and secondary surfaces |
+The ChargeMitra palette is defined centrally in the Tailwind v4 `@theme` block in `plugshare/src/index.css`. Use these semantic tokens rather than adding page-specific colors.
 
-Use semantic status colors sparingly: green for success, amber for caution or pending states, red for errors, and blue only for distinct informational states. Do not rely on color alone to communicate status.
+| Purpose | Value |
+| --- | --- |
+| `--color-brand` | `#173B32` — deep forest |
+| `--color-brand-hover` | `#1F4D41` |
+| `--color-accent` | `#C7F36B` — electric lime, for selected states and key highlights |
+| `--color-accent-hover` | `#B8E55A` |
+| `--color-bg` | `#F5F3EB` — warm ivory |
+| `--color-surface` | `#FFFFFF` |
+| `--color-surface-muted` | `#DCE4DA` — sage grey |
+| `--color-text` | `#202923` |
+| `--color-text-muted` | `#5A6B5F` |
+| `--color-border` | `#E4E7DF` |
+| `--color-focus` | `#173B32` |
+| `--color-success` | `#4F7A5C` |
+| `--color-warning` | `#B8832E` |
+| `--color-error` | `#A8473C` |
+| `--color-disabled-bg` | `#EDEEE8` |
+| `--color-disabled-text` | `#9AA69B` |
+| `--radius-card` / `--radius-btn` / `--radius-input` | `16px` / `10px` / `10px` |
+
+Use semantic status colors (success, warning, error) only to communicate status. Maintain readable contrast and do not use color as the only status cue.
 
 ## Typography
 
-- Headings: Space Grotesk, with a sans-serif fallback.
-- Body, labels, and controls: DM Sans, with a sans-serif fallback.
-- Keep heading hierarchy concise and readable; body copy should favor comfortable line height.
-- Fonts are loaded as progressive enhancement; fallback fonts must remain usable if the font service is unavailable.
+- Display headings use `--font-display`: `"Space Grotesk", ui-sans-serif, system-ui, sans-serif` (weights 500, 600, and 700).
+- Body and interface text use `--font-body`: `"DM Sans", ui-sans-serif, system-ui, sans-serif` (weights 400, 500, 600, and 700).
+- Both families are loaded from Google Fonts using preconnect and stylesheet links in `plugshare/index.html`, with `display=swap`.
+- Preserve the existing Tailwind type scale and page-specific hierarchy. Use concise headings, comfortable body line lengths, and readable supporting text.
+- Keep the listed system font fallbacks so text remains readable if Google Fonts cannot be reached.
 
 ## Spacing and layout
 
-- Use Tailwind's 4px-based spacing scale consistently.
-- Center content in a readable max-width container. Wide data/map screens may use a wider container than forms.
-- Use responsive grids only when the content benefits from side-by-side comparison; stack form fields on small screens.
-- Prefer whitespace and alignment over nested cards. Use rounded surfaces for distinct tasks, not as a wrapper around every paragraph.
-- Keep mobile layouts free of horizontal overflow; buttons and map controls should be comfortably touchable.
+- Use Tailwind's 4px spacing scale and existing utility conventions.
+- Use a centered, purpose-appropriate content width (`max-w-*`), consistent page gutters, and clear separation between page header, primary content, and supporting content.
+- Common page gutters are `px-6` on larger viewports and smaller gutters on narrow mobile screens.
+- Prefer whitespace and subtle borders over repeated heavy shadows or identical card grids.
+- Use cards when content is a distinct item or workflow surface, not as a wrapper for every section.
 
 ## Components
 
-### Buttons and links
+- **Buttons:** Primary actions use the brand token with clear hover/focus states and a rounded shape. Use the accent token selectively for highlights or selected states. Secondary actions use a light surface with a visible border token. Disabled controls must remain visibly disabled.
+- **Forms:** Keep visible labels, associate controls with their labels, use full-width rounded inputs with a subtle border and clear focus state, and preserve native validation and autocomplete where present.
+- **Navigation:** Preserve the existing route structure and link destinations. Keep ChargeMitra branding visible and navigation usable by keyboard and touch.
+- **Cards and panels:** Use white surfaces, slate-200 borders, generous but responsive padding, and restrained shadows. Maintain hierarchy inside the panel rather than nesting panels unnecessarily.
+- **Tables and lists:** Keep labels and values scannable; allow layouts to adapt on mobile instead of clipping important content.
+- **Dialogs:** Keep content within the viewport, provide an obvious close/escape path, preserve focus visibility, and avoid hiding primary actions below a mobile viewport.
+- **Status and feedback:** Use the existing `role="alert"` and `role="status"` patterns for errors and operation feedback. Empty and loading states should explain the state and offer a next step when one exists.
 
-- Reuse `plugshare/src/components/Button.tsx` (`Button` and `LinkButton`).
-- Primary buttons use Deep Forest and high-contrast text. Secondary buttons use a white surface and Sage Grey border.
-- Keep visible hover, focus, active, and disabled states. Links that navigate should remain links; actions should remain buttons.
-- Aim for a 44px minimum interactive height.
+Reuse existing components and established Tailwind patterns before creating a new component style.
 
-### Forms
+## Animation
 
-- Use a visible label for every input; placeholders are supplementary, not labels.
-- Use `.cm-field` for standard form controls. Keep validation messages adjacent to the relevant form and use `role="alert"` for actionable errors.
-- Preserve native input types, autocomplete, required constraints, and existing Zod/database validation.
-
-### Surfaces, tables, dialogs, and statuses
-
-- Use a small set of surface treatments: page background, plain content, bordered panel, and emphasized summary.
-- Tables should retain readable headers and have a narrow-screen strategy (scroll container or stacked rows).
-- Dialogs must keep keyboard focus usable and fit within the viewport.
-- Status indicators need clear text and accessible contrast.
-
-### Navigation
-
-- Keep the current React Router routes and make active context obvious.
-- Public navigation should remain compact and responsive. Authenticated pages should provide a clear return path to the relevant dashboard.
-- Do not add a second navigation system when an existing route or component already provides the needed path.
-
-## Motion
-
-- Prefer the shared 280ms page entrance and short interaction transitions already defined in `plugshare/src/index.css`.
-- Respect `prefers-reduced-motion`; do not add continuous or decorative movement.
-- Never fake charger progress, vehicle telemetry, booking results, billing, or payment status.
-- Reuse an existing animation dependency if one is introduced intentionally; do not install one for simple transitions.
+- Prefer brief, purposeful hover/focus transitions and subtle opacity or transform changes.
+- Do not add a new animation dependency for decorative effects. There is no dedicated animation library in the current frontend.
+- Never imply fake charger availability, booking progress, battery telemetry, or payment status.
+- The global stylesheet respects `prefers-reduced-motion`; new motion must remain optional and non-blocking.
 
 ## Responsive breakpoints
 
-Use the existing Tailwind breakpoints:
+Use Tailwind's default breakpoints unless an existing component has a documented reason to differ:
 
-- Base: small phones, from 320px.
-- `sm`: 640px.
-- `md`: 768px.
-- `lg`: 1024px.
-- `xl`: 1280px.
+| Breakpoint | Minimum width |
+| --- | --- |
+| `sm` | 640px |
+| `md` | 768px |
+| `lg` | 1024px |
+| `xl` | 1280px |
+| `2xl` | 1536px |
 
-Check navigation, form actions, maps, error messages, cards, and data-heavy sections at mobile, tablet, and desktop widths.
+Design mobile-first. Keep forms and touch targets usable, avoid horizontal page overflow, and ensure maps, dense lists, and dialogs remain usable at narrow widths.
 
 ## Accessibility
 
-- Use semantic headings, landmarks, labels, fieldsets, and buttons.
-- Preserve keyboard operation and a visible focus ring.
-- Give non-decorative images and map controls meaningful accessible names.
-- Use status/live regions for asynchronous results and loading feedback.
-- Maintain sufficient text contrast and do not communicate state by color alone.
-- Honor reduced-motion preferences.
+- Use semantic headings, landmarks, labels, buttons, and links.
+- Maintain visible keyboard focus; do not remove outlines without a replacement.
+- Provide accessible names for icon-only controls and appropriate live regions for dynamic feedback.
+- Preserve native form validation, keyboard navigation, and reduced-motion preferences.
+- Keep text contrast readable and do not encode meaning only through color.
 
-## Loading, empty, and error states
+## Page patterns and implementation guardrails
 
-- Keep loading states near the content that is loading and prevent duplicate submissions where appropriate.
-- Empty states should explain what is missing and offer a real next action when one exists.
-- Errors must identify the failed action and preserve user-entered data where possible.
-- Do not show success-shaped fallbacks when a Supabase, map, payment, or geocoding operation fails.
-
-## Existing page patterns
-
-The current frontend routes are:
-
-- Public: `/`, `/login`, `/register`.
-- Account selection: `/account-type`.
-- Owner: `/owner/dashboard`, `/owner/find`.
-- Provider: `/provider/dashboard`, `/provider/chargers/new`, `/host/onboarding`.
-- Shared session: `/session/:id`.
-
-Use the existing page's purpose when choosing its layout:
-
-- Landing: editorial hero, short explainer, host call-to-action.
-- Login/register: focused, centered form surface.
-- Dashboards: clear summary and task sections with responsive stacking.
-- Charger discovery: map-first workspace with synchronized selection and search/filter controls.
-- Onboarding: one readable form flow with validation and clear progress/results.
-- Session: prominent status and billing/action summaries, with secondary event history.
-
-Do not create pages for planned features until their functionality and route are part of the current application.
-
-## Engineering boundaries
-
-- Preserve Supabase queries, authentication, RLS assumptions, map behavior, booking/session/payment logic, and existing error handling while making visual changes.
-- Do not expose secrets or place them in `VITE_` variables.
-- Treat private-home exact addresses and entry instructions as sensitive; never render them in public discovery results.
-- Test `npm run build` and `npm run lint` after UI changes. Test protected flows only with authorized test accounts; do not claim external integrations were verified without credentials.
+- Follow the actual route and page structure in `plugshare/src/App.tsx`; do not create duplicate routes or pages for features that are not implemented.
+- Keep public, authentication, owner, provider, charger discovery, and session/billing flows visually related while letting each page use a layout that suits its task.
+- Preserve Supabase authentication and data access, MapLibre interactions, booking/session/payment flows, and authenticated Sarvam AI behavior during visual work.
+- Do not substitute sample data, weaken authorization, expose secrets, or change backend business logic as part of a design-only change.
+- Loading, empty, success, and error states must reflect real application state.

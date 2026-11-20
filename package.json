@@ -1,4 +1,7 @@
 {
+  "scripts": {
+    "dev": "npm --prefix plugshare run dev"
+  },
   "dependencies": {
     "@hookform/resolvers": "^7.0.3",
     "@supabase/supabase-js": "^2.119.0",

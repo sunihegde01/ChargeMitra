@@ -1,5 +1,12 @@
 # React + TypeScript + Vite
 
+## Run the app
+
+From the repository root, copy `.env.example` to `.env.local` and set
+`VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` to the values from your Supabase
+project's API settings. Then run `npm run dev`. The Vite config loads environment
+files from the repository root. Restart the dev server after changing `.env.local`.
+
 This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
 
 ## Host onboarding database setup

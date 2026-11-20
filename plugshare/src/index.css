@@ -1,20 +1,42 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
 @import "tailwindcss";
 
 @theme {
-  --color-deep-forest: #173B32;
-  --color-electric-lime: #C7F36B;
-  --color-warm-ivory: #F5F3EB;
-  --color-graphite: #202923;
-  --color-sage-grey: #DCE4DA;
-  --font-heading: "Space Grotesk", sans-serif;
-  --font-body: "DM Sans", sans-serif;
+  --color-brand: #173B32;
+  --color-brand-hover: #1F4D41;
+  --color-accent: #C7F36B;
+  --color-accent-hover: #B8E55A;
+  --color-bg: #F5F3EB;
+  --color-surface: #FFFFFF;
+  --color-surface-muted: #DCE4DA;
+  --color-text: #202923;
+  --color-text-muted: #5A6B5F;
+  --color-border: #E4E7DF;
+  --color-focus: #173B32;
+  --color-success: #4F7A5C;
+  --color-warning: #B8832E;
+  --color-error: #A8473C;
+  --color-disabled-bg: #EDEEE8;
+  --color-disabled-text: #9AA69B;
+
+  --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+
+  --radius-card: 16px;
+  --radius-btn: 10px;
+  --radius-input: 10px;
+
+  --color-deep-forest: var(--color-brand);
+  --color-electric-lime: var(--color-accent);
+  --color-warm-ivory: var(--color-bg);
+  --color-graphite: var(--color-text);
+  --color-sage-grey: var(--color-surface-muted);
+  --font-heading: var(--font-display);
 }
 
 :root {
   font-family: var(--font-body);
-  color: var(--color-graphite);
-  background: var(--color-warm-ivory);
+  color: var(--color-text);
+  background: var(--color-bg);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -32,13 +54,19 @@ html {
 body {
   min-height: 100vh;
   margin: 0;
+  font-family: var(--font-body);
+  color: var(--color-text);
+  background: var(--color-bg);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
 }
 
 h1,
 h2,
 h3,
 h4 {
-  font-family: var(--font-heading);
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
 }
 
 button,
@@ -57,32 +85,32 @@ textarea {
 }
 
 :focus-visible {
-  outline: 3px solid var(--color-deep-forest);
-  outline-offset: 3px;
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
 }
 
 ::selection {
-  color: var(--color-deep-forest);
-  background: var(--color-electric-lime);
+  background: var(--color-accent);
+  color: var(--color-text);
 }
 
 .cm-field {
   width: 100%;
   min-height: 2.9rem;
-  border: 1px solid #cbd5d0;
+  border: 1px solid var(--color-border);
   border-radius: 0.875rem;
-  background: #fff;
+  background: var(--color-surface);
   padding: 0.75rem 1rem;
-  color: var(--color-graphite);
+  color: var(--color-text);
   transition: border-color 160ms ease, box-shadow 160ms ease;
 }
 
 .cm-field::placeholder {
-  color: #64736a;
+  color: var(--color-text-muted);
 }
 
 .cm-field:focus {
-  border-color: var(--color-deep-forest);
+  border-color: var(--color-focus);
   outline: none;
   box-shadow: 0 0 0 3px rgb(23 59 50 / 12%);
 }

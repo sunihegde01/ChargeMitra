@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Download } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
+import { Button } from '../../components/ui'
 import { ChargerDirections } from '../../components/ChargerDirections'
 import { useAuth } from '../../context/AuthContext'
 import { parsePoint, type Point } from '../../location'
@@ -135,6 +137,7 @@ export default function ActiveSessionPage() {
   const [sessionEvents, setSessionEvents] = useState<SessionEvent[]>([])
   const [booking, setBooking] = useState<Booking | null>(null)
   const [charger, setCharger] = useState<Charger | null>(null)
+  const [providerName, setProviderName] = useState('')
   const [chargerLocation, setChargerLocation] = useState<Point | null>(null)
   const [isOwner, setIsOwner] = useState(false)
   const [isProvider, setIsProvider] = useState(false)
@@ -147,6 +150,13 @@ export default function ActiveSessionPage() {
   const [paymentError, setPaymentError] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
+  const [billLanguage, setBillLanguage] = useState<'en' | 'kn' | 'hi'>('en')
+  const [billExplanation, setBillExplanation] = useState('')
+  const [billLoading, setBillLoading] = useState(false)
+  const [billError, setBillError] = useState('')
+  const [billAudioUrl, setBillAudioUrl] = useState('')
+  const [speechLoading, setSpeechLoading] = useState(false)
+  const billAudioRef = useRef<HTMLAudioElement>(null)
 
   const loadSession = useCallback(async () => {
     if (!id) {
@@ -157,6 +167,7 @@ export default function ActiveSessionPage() {
 
     setLoading(true)
     setErrorMessage('')
+    setProviderName('')
     setChargerLocation(null)
     setSessionEvents([])
     const { data: sessionRow, error: sessionError } = await supabase
@@ -198,10 +209,11 @@ export default function ActiveSessionPage() {
       setIsOwner(bookingRow.owner_id === user?.id)
       const { data: provider, error: providerError } = await supabase
         .from('providers')
-        .select('profile_id,location')
+        .select('profile_id,location,business_name')
         .eq('id', bookingRow.provider_id)
         .maybeSingle()
       if (providerError) setErrorMessage(providerError.message)
+      setProviderName(provider?.business_name ?? '')
       setIsProvider(provider?.profile_id === user?.id)
       setChargerLocation(parsePoint(provider?.location))
 
@@ -339,6 +351,91 @@ export default function ActiveSessionPage() {
     }
   }
 
+  async function explainBill() {
+    const quantity = session?.actual_kwh ?? session?.estimated_kwh
+    if (!session || quantity == null || booking == null || finalAmount == null) {
+      setBillError('A completed bill with an energy quantity is required before it can be explained.')
+      return
+    }
+    setBillLoading(true)
+    setBillError('')
+    setBillExplanation('')
+    setBillAudioUrl('')
+    try {
+      const { data, error } = await supabase.functions.invoke<{ explanation: string }>('sarvam-assistant', {
+        body: {
+          quantity: Number(quantity),
+          rate: Number(booking.price_per_kwh_snapshot),
+          platform_fee: null,
+          total: Number(finalAmount),
+          method: session.calculation_method === 'METER_BASED' ? 'ACTUAL' : 'ESTIMATED',
+          language: billLanguage,
+        },
+        headers: { 'x-sarvam-action': 'explain-bill' },
+      })
+      if (error) throw new Error(await getFunctionErrorMessage(error, 'Could not create a bill explanation.'))
+      if (!data?.explanation?.trim()) throw new Error('Sarvam returned an empty bill explanation.')
+      setBillExplanation(data.explanation)
+    } catch (error) {
+      setBillError(error instanceof Error ? error.message : 'Could not explain this bill. You can still review the bill details above.')
+    } finally {
+      setBillLoading(false)
+    }
+  }
+
+  async function listenToBill() {
+    if (billAudioUrl) {
+      await billAudioRef.current?.play()
+      return
+    }
+    if (!billExplanation) return
+    setSpeechLoading(true)
+    setBillError('')
+    try {
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+      if (sessionError) throw new Error(sessionError.message)
+      const accessToken = sessionData.session?.access_token
+      if (!accessToken) throw new Error('Your session expired. Sign in again to play the bill explanation.')
+
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sarvam-assistant`, {
+        method: 'POST',
+        headers: {
+          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          'x-sarvam-action': 'speak',
+        },
+        body: JSON.stringify({ text: billExplanation, language: billLanguage }),
+      })
+      const responseText = await response.text()
+      let result: { audio?: unknown; error?: unknown; message?: unknown }
+      try {
+        result = JSON.parse(responseText) as { audio?: unknown; error?: unknown; message?: unknown }
+      } catch {
+        throw new Error(response.ok
+          ? 'The voice service returned an unreadable response.'
+          : `Voice generation failed (HTTP ${response.status}): ${responseText.slice(0, 300)}`)
+      }
+      if (!response.ok) {
+        const detail = typeof result.error === 'string'
+          ? result.error
+          : typeof result.message === 'string'
+            ? result.message
+            : `Voice generation failed (HTTP ${response.status}).`
+        throw new Error(detail)
+      }
+      if (typeof result.audio !== 'string' || !result.audio) throw new Error('Sarvam returned no speech audio.')
+      const bytes = Uint8Array.from(atob(result.audio), (character) => character.charCodeAt(0))
+      const nextUrl = URL.createObjectURL(new Blob([bytes], { type: 'audio/wav' }))
+      setBillAudioUrl(nextUrl)
+      window.setTimeout(() => void billAudioRef.current?.play(), 0)
+    } catch (error) {
+      setBillError(error instanceof Error ? error.message : 'Could not play the bill explanation.')
+    } finally {
+      setSpeechLoading(false)
+    }
+  }
+
   const canControl = isOwner || isProvider
   const finalAmount = session?.status === 'STOPPED' ? session.final_amount : null
 
@@ -457,15 +554,74 @@ export default function ActiveSessionPage() {
                 )}
               </dl>
               {isOwner && session.status === 'STOPPED' && finalAmount !== null && (
-                <section className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50/50 p-5">
-                  <h2 className="font-semibold">Bill review</h2>
+                <section className="receipt-print mt-6 rounded-2xl border border-emerald-200 bg-emerald-50/50 p-5">
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div>
+                      <p className="font-display text-lg font-bold text-emerald-800">ChargeMitra</p>
+                      <h2 className="mt-1 text-2xl font-semibold">Receipt</h2>
+                    </div>
+                    <Button
+                      className="no-print"
+                      leftIcon={<Download aria-hidden="true" className="size-4" />}
+                      onClick={() => window.print()}
+                      variant="secondary"
+                    >
+                      Download receipt
+                    </Button>
+                  </div>
+                  <dl className="mt-5 grid gap-3 border-b border-emerald-200 pb-5 text-sm sm:grid-cols-2">
+                    <div><dt className="text-slate-600">Session ID</dt><dd className="mt-1 break-all font-medium">{session.id}</dd></div>
+                    <div><dt className="text-slate-600">Booking ID</dt><dd className="mt-1 break-all font-medium">{session.booking_id}</dd></div>
+                    <div>
+                      <dt className="text-slate-600">Date</dt>
+                      <dd className="mt-1 font-medium">
+                        {session.ended_at ? new Date(session.ended_at).toLocaleString() : 'Unavailable'}
+                      </dd>
+                    </div>
+                    <div><dt className="text-slate-600">Provider</dt><dd className="mt-1 font-medium">{providerName || 'Unavailable'}</dd></div>
+                    <div><dt className="text-slate-600">Charger</dt><dd className="mt-1 font-medium">{charger?.name ?? 'Unavailable'}</dd></div>
+                    <div>
+                      <dt className="text-slate-600">Calculation method</dt>
+                      <dd className="mt-1 font-medium">
+                        {session.calculation_method === 'TIME_BASED'
+                          ? 'ESTIMATED — Time-based'
+                          : session.calculation_method === 'METER_BASED'
+                            ? 'ACTUAL — Meter-based'
+                            : 'Not recorded'}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-slate-600">Duration</dt>
+                      <dd className="mt-1 font-medium">
+                        {session.active_duration_seconds == null
+                          ? 'Unavailable'
+                          : formatDuration(Number(session.active_duration_seconds))}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-slate-600">Energy</dt>
+                      <dd className="mt-1 font-medium">
+                        {session.actual_kwh ?? session.estimated_kwh ?? '—'} kWh
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-slate-600">Rate</dt>
+                      <dd className="mt-1 font-medium">₹{booking?.price_per_kwh_snapshot ?? '—'} / kWh</dd>
+                    </div>
+                    <div>
+                      <dt className="text-slate-600">Amount</dt>
+                      <dd className="mt-1 font-semibold">₹{Number(finalAmount).toFixed(2)}</dd>
+                    </div>
+                    <div><dt className="text-slate-600">Payment status</dt><dd className="mt-1 font-medium">{session.payment_status}</dd></div>
+                  </dl>
+                  <h3 className="mt-5 font-semibold">Bill review</h3>
                   <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
                     <div><dt className="text-slate-600">Energy</dt><dd className="font-medium">{session.actual_kwh ?? session.estimated_kwh ?? '—'} kWh</dd></div>
                     <div><dt className="text-slate-600">Rate</dt><dd className="font-medium">₹{booking?.price_per_kwh_snapshot ?? '—'} / kWh</dd></div>
                     <div><dt className="text-slate-600">Platform fee</dt><dd className="font-medium">Not provided in this bill</dd></div>
                     <div><dt className="text-slate-600">Total · {session.calculation_method === 'METER_BASED' ? 'ACTUAL' : 'ESTIMATED'}</dt><dd className="font-medium">₹{Number(finalAmount).toFixed(2)}</dd></div>
                   </dl>
-                  <div className="mt-4 rounded-xl border border-emerald-200 bg-white p-4">
+                  <div className="no-print mt-4 rounded-xl border border-emerald-200 bg-white p-4">
                     {session.payment_status === 'PAID' ? (
                       <>
                         <p className="font-semibold text-emerald-800">Paid with Razorpay</p>
@@ -476,7 +632,7 @@ export default function ActiveSessionPage() {
                     ) : (
                       <>
                         <button
-                          className="rounded-full bg-emerald-700 px-5 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                          className="no-print rounded-full bg-emerald-700 px-5 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                           disabled={paymentLoading || checkoutOpen || Number(finalAmount) <= 0}
                           onClick={() => void payFinalBill()}
                           type="button"
@@ -497,6 +653,48 @@ export default function ActiveSessionPage() {
                     )}
                     {paymentError && <p className="mt-3 text-sm text-red-700" role="alert">{paymentError}</p>}
                   </div>
+                  <div className="no-print mt-4 flex flex-wrap items-end gap-3">
+                    <label className="grid gap-1 text-sm font-medium">
+                      Explanation language
+                      <select
+                        className="rounded-xl border border-slate-300 bg-white px-3 py-2"
+                        onChange={(event) => {
+                          setBillLanguage(event.target.value as 'en' | 'kn' | 'hi')
+                          setBillExplanation('')
+                          setBillAudioUrl('')
+                        }}
+                        value={billLanguage}
+                      >
+                        <option value="en">English</option>
+                        <option value="kn">Kannada</option>
+                        <option value="hi">Hindi</option>
+                      </select>
+                    </label>
+                    <button
+                      className="no-print rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                      disabled={billLoading || speechLoading}
+                      onClick={() => void explainBill()}
+                      type="button"
+                    >
+                      {billLoading ? 'Explaining…' : 'Explain this bill'}
+                    </button>
+                    {billExplanation && (
+                      <button
+                        className="no-print rounded-xl border border-emerald-700 px-4 py-2 text-sm font-semibold text-emerald-800 disabled:opacity-60"
+                        disabled={speechLoading}
+                        onClick={() => void listenToBill()}
+                        type="button"
+                      >
+                        {speechLoading ? 'Preparing audio…' : 'Listen'}
+                      </button>
+                    )}
+                  </div>
+                  {billExplanation && <p className="no-print mt-4 rounded-xl bg-white p-4 text-sm leading-6" role="status">{billExplanation}</p>}
+                  {billAudioUrl && <audio className="no-print mt-3 w-full" controls ref={billAudioRef} src={billAudioUrl} />}
+                  {billError && <p className="no-print mt-3 text-sm text-red-700" role="alert">{billError}</p>}
+                  <p className="mt-6 border-t border-emerald-200 pt-4 text-xs text-slate-600">
+                    Generated by ChargeMitra on {new Date().toLocaleString()}
+                  </p>
                 </section>
               )}
               <section className="mt-6 rounded-2xl border border-slate-200 p-5">

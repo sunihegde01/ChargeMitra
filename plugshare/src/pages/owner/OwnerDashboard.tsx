@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent, KeyboardEvent } from 'react'
+import { Receipt } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { Pencil } from 'lucide-react'
+import { Button } from '../../components/ui'
 import { useAuth } from '../../context/AuthContext'
 import { clearDefaultVehicleId, getDefaultVehicleId, setDefaultVehicleId } from '../../vehiclePreference'
 import { supabase } from '../../supabase'
@@ -11,6 +14,8 @@ type Vehicle = {
   model: string
   variant: string | null
   usable_battery_kwh: number
+  max_ac_kw: number
+  max_dc_kw: number
   connector_types: string[]
 }
 
@@ -140,6 +145,7 @@ export default function OwnerDashboard() {
   const [errorMessage, setErrorMessage] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
   const [defaultVehicleId, setDefaultVehicleIdState] = useState('')
+  const [editingVehicleId, setEditingVehicleId] = useState<string | null>(null)
   const [brand, setBrand] = useState('')
   const [model, setModel] = useState('')
   const [battery, setBattery] = useState('')
@@ -227,7 +233,7 @@ export default function OwnerDashboard() {
     const [vehiclesResult, bookingsResult] = await Promise.all([
       supabase
         .from('vehicles')
-        .select('id,brand,model,variant,usable_battery_kwh,connector_types')
+        .select('id,brand,model,variant,usable_battery_kwh,max_ac_kw,max_dc_kw,connector_types')
         .eq('owner_id', user.id)
         .order('created_at', { ascending: false }),
       supabase
@@ -316,6 +322,77 @@ export default function OwnerDashboard() {
     setSuccessMessage('Default car for bookings updated.')
   }
 
+  function editVehicle(vehicle: Vehicle) {
+    setEditingVehicleId(vehicle.id)
+    setBrand(vehicle.brand)
+    setModel(vehicle.model)
+    setBattery(String(vehicle.usable_battery_kwh))
+    setMaxAc(String(vehicle.max_ac_kw))
+    setMaxDc(String(vehicle.max_dc_kw))
+    setConnectors(vehicle.connector_types.join(', '))
+    setCompanyOptionsOpen(false)
+    setModelOptionsOpen(false)
+    setErrorMessage('')
+    setSuccessMessage('')
+    document.getElementById('add-car')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
+
+  function cancelVehicleEdit() {
+    setEditingVehicleId(null)
+    setBrand('')
+    setModel('')
+    setBattery('')
+    setMaxAc('')
+    setMaxDc('')
+    setConnectors('')
+    setErrorMessage('')
+  }
+
+  async function updateVehicle(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!user || !editingVehicleId) return
+    setSaving(true)
+    setErrorMessage('')
+    setSuccessMessage('')
+
+    const updatedVehicle = {
+      brand: brand.trim(),
+      model: model.trim(),
+      usable_battery_kwh: Number(battery),
+      max_ac_kw: Number(maxAc),
+      max_dc_kw: Number(maxDc),
+      connector_types: connectors.split(',').map((connector) => connector.trim()).filter(Boolean),
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('vehicles')
+        .update(updatedVehicle)
+        .eq('id', editingVehicleId)
+        .eq('owner_id', user.id)
+        .select()
+
+      if (error) {
+        setErrorMessage(error.message)
+        return
+      }
+      if (!data || data.length === 0) {
+        setErrorMessage('Could not update this vehicle. Refresh and try again.')
+        return
+      }
+
+      setVehicles((current) => current.map((vehicle) =>
+        vehicle.id === editingVehicleId ? { ...vehicle, ...updatedVehicle } : vehicle,
+      ))
+      setEditingVehicleId(null)
+      setSuccessMessage('Vehicle updated.')
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Could not update this vehicle.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   async function addVehicle(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!user) return
@@ -323,31 +400,36 @@ export default function OwnerDashboard() {
     setErrorMessage('')
     setSuccessMessage('')
 
-    const { data, error } = await supabase.from('vehicles').insert({
-      owner_id: user.id,
-      brand,
-      model,
-      usable_battery_kwh: Number(battery),
-      max_ac_kw: Number(maxAc),
-      max_dc_kw: Number(maxDc),
-      connector_types: connectors.split(',').map((connector) => connector.trim()).filter(Boolean),
-    }).select('id').single()
+    try {
+      const { data, error } = await supabase.from('vehicles').insert({
+        owner_id: user.id,
+        brand,
+        model,
+        usable_battery_kwh: Number(battery),
+        max_ac_kw: Number(maxAc),
+        max_dc_kw: Number(maxDc),
+        connector_types: connectors.split(',').map((connector) => connector.trim()).filter(Boolean),
+      }).select('id').single()
 
-    if (error || !data) {
-      setErrorMessage(error?.message ?? 'The car was added but could not be selected.')
-    } else {
-      setDefaultVehicleIdState(data.id)
-      setDefaultVehicleId(user.id, data.id)
-      setBrand('')
-      setModel('')
-      setBattery('')
-      setMaxAc('')
-      setMaxDc('')
-      setConnectors('')
-      setSuccessMessage('Vehicle added.')
-      await loadDashboard()
+      if (error || !data) {
+        setErrorMessage(error?.message ?? 'The car was added but could not be selected.')
+      } else {
+        setDefaultVehicleIdState(data.id)
+        setDefaultVehicleId(user.id, data.id)
+        setBrand('')
+        setModel('')
+        setBattery('')
+        setMaxAc('')
+        setMaxDc('')
+        setConnectors('')
+        setSuccessMessage('Vehicle added.')
+        await loadDashboard()
+      }
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Could not add the vehicle.')
+    } finally {
+      setSaving(false)
     }
-    setSaving(false)
   }
 
   const defaultVehicle = vehicles.find((vehicle) => vehicle.id === defaultVehicleId)
@@ -373,14 +455,23 @@ export default function OwnerDashboard() {
             <h1 className="mt-3 text-3xl font-semibold">User dashboard</h1>
             <p className="mt-1 text-slate-600">Manage your vehicles and charging bookings.</p>
           </div>
-          <button
-            className="rounded-full border border-slate-300 px-5 py-3 font-semibold disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={signOutLoading}
-            onClick={() => void handleSignOut()}
-            type="button"
-          >
-            {signOutLoading ? 'Signing out...' : 'Sign out'}
-          </button>
+          <div className="flex items-center gap-3">
+            <Link
+              className="inline-flex items-center gap-2 rounded-full border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-800 hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700"
+              to="/owner/payments"
+            >
+              <Receipt aria-hidden="true" className="size-4" />
+              Payments
+            </Link>
+            <button
+              className="rounded-full border border-slate-300 px-5 py-3 font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={signOutLoading}
+              onClick={() => void handleSignOut()}
+              type="button"
+            >
+              {signOutLoading ? 'Signing out...' : 'Sign out'}
+            </button>
+          </div>
         </header>
 
         {signOutError && <p className="mt-2 text-sm text-red-700" role="alert">{signOutError}</p>}
@@ -413,13 +504,34 @@ export default function OwnerDashboard() {
                     ))}
                   </select>
                 </label>
+                <h3 className="mt-5 font-semibold">Your vehicles</h3>
+                <ul className="mt-2 divide-y divide-slate-100">
+                  {vehicles.map((vehicle) => (
+                    <li className="flex items-center justify-between gap-3 py-3" key={vehicle.id}>
+                      <div>
+                        <p className="font-medium">{vehicle.brand} {vehicle.model}</p>
+                        <p className="mt-1 text-sm text-slate-600">
+                          {vehicle.usable_battery_kwh} kWh · AC {vehicle.max_ac_kw} kW · DC {vehicle.max_dc_kw} kW
+                        </p>
+                      </div>
+                      <Button
+                        leftIcon={<Pencil aria-hidden="true" className="size-4" />}
+                        onClick={() => editVehicle(vehicle)}
+                        size="sm"
+                        variant="ghost"
+                      >
+                        Edit
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
               </>
             ) : <p className="mt-4 text-slate-600">Add your car to start booking chargers.</p>}
 
             {!!vehicles.length && <p className="mt-3 text-xs text-slate-500">This vehicle is automatically used for charger bookings.</p>}
 
-            <form className="mt-6 grid gap-3 border-t border-slate-100 pt-6 sm:grid-cols-2" id="add-car" onSubmit={addVehicle}>
-              <h3 className="font-semibold sm:col-span-2">Add your car</h3>
+            <form className="mt-6 grid gap-3 border-t border-slate-100 pt-6 sm:grid-cols-2" id="add-car" onSubmit={editingVehicleId ? updateVehicle : addVehicle}>
+              <h3 className="font-semibold sm:col-span-2">{editingVehicleId ? 'Edit vehicle' : 'Add your car'}</h3>
               <label className="relative grid gap-1 text-sm font-medium text-slate-700">
                 Company
                 <input
@@ -528,7 +640,17 @@ export default function OwnerDashboard() {
                 <input aria-label="Maximum DC power in kW" className={fieldClass} min="0" placeholder="Enter 0 if unsupported" required type="number" step="0.1" value={maxDc} onChange={(event) => setMaxDc(event.target.value)} />
               </label>
               <input aria-label="Connector types, separated by commas" className={fieldClass} placeholder="Connectors, comma separated" required value={connectors} onChange={(event) => setConnectors(event.target.value)} />
-              <button className="rounded-full bg-slate-900 px-5 py-3 font-semibold text-white disabled:opacity-60 sm:col-span-2" disabled={saving} type="submit">{saving ? 'Saving...' : 'Add car'}</button>
+              <button className="rounded-full bg-slate-900 px-5 py-3 font-semibold text-white disabled:opacity-60 sm:col-span-2" disabled={saving} type="submit">{saving ? 'Saving...' : editingVehicleId ? 'Save changes' : 'Add car'}</button>
+              {editingVehicleId && (
+                <button
+                  className="rounded-full border border-slate-300 px-5 py-3 font-semibold sm:col-span-2"
+                  disabled={saving}
+                  onClick={cancelVehicleEdit}
+                  type="button"
+                >
+                  Cancel
+                </button>
+              )}
             </form>
           </div>
 

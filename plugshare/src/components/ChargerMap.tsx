@@ -66,7 +66,7 @@ export function ChargerMap({ chargers, center, userLocation, nearestChargerId, s
           onMapLocationSelect?.({ lat: event.lngLat.lat, lng: event.lngLat.lng })
         }
       }}
-      style={{ width: '100%', height: '500px', borderRadius: '0.75rem', cursor: pickingLocation ? 'crosshair' : undefined }}
+      style={{ width: '100%', height: '100%', borderRadius: '0.75rem', cursor: pickingLocation ? 'crosshair' : undefined }}
       mapStyle={MAP_STYLE}
     >
       <NavigationControl position="top-right" />
@@ -94,10 +94,10 @@ export function ChargerMap({ chargers, center, userLocation, nearestChargerId, s
                 {charger.distanceLabel}
               </span>
             )}
-            <span className={`rounded-full px-2 py-1 text-xs font-semibold text-white shadow ${charger.id === selectedChargerId ? 'bg-amber-500' : charger.id === nearestChargerId ? 'bg-blue-700' : 'bg-emerald-600'}`}>
+            <span className={`rounded-full px-2 py-1 text-xs font-semibold shadow ${charger.id === selectedChargerId ? 'bg-[var(--color-accent)] text-[var(--color-brand)]' : charger.id === nearestChargerId ? 'bg-blue-700 text-white' : 'bg-emerald-600 text-white'}`}>
               ₹{charger.pricePerKwh}/kWh
             </span>
-            <span className={`mt-1 h-3 w-1 ${charger.id === selectedChargerId ? 'bg-amber-500' : charger.id === nearestChargerId ? 'bg-blue-700' : 'bg-emerald-600'}`} />
+            <span className={`mt-1 h-3 w-1 ${charger.id === selectedChargerId ? 'bg-[var(--color-accent)]' : charger.id === nearestChargerId ? 'bg-blue-700' : 'bg-emerald-600'}`} />
           </button>
         </Marker>
       ))}

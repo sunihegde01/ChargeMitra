@@ -107,21 +107,32 @@ export default function ProviderDashboard() {
     setSavingBookingId(bookingId)
     setErrorMessage('')
     setSuccessMessage('')
-    const { error } = await supabase
-      .from('bookings')
-      .update({
-        status,
-        ...(status === 'ACCEPTED' ? { calculation_method: calculationMethod } : {}),
-      })
-      .eq('id', bookingId)
-      .eq('status', 'PENDING')
-    if (error) {
-      setErrorMessage(error.message)
-    } else {
+    try {
+      const { data, error } = await supabase
+        .from('bookings')
+        .update({
+          status,
+          ...(status === 'ACCEPTED' ? { calculation_method: calculationMethod } : {}),
+        })
+        .eq('id', bookingId)
+        .eq('status', 'PENDING')
+        .select()
+      if (error) {
+        setErrorMessage(error.message)
+        return
+      }
+      if (!data || data.length === 0) {
+        setErrorMessage('This booking was already handled by another action. Refresh to see the latest status.')
+        return
+      }
+
       setSuccessMessage(`Booking ${status.toLowerCase()}.`)
       await loadDashboard()
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Could not update booking status.')
+    } finally {
+      setSavingBookingId('')
     }
-    setSavingBookingId('')
   }
 
   async function toggleChargerStatus(charger: Charger) {

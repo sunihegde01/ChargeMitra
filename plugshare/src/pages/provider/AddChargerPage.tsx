@@ -208,9 +208,17 @@ export default function AddChargerPage() {
           return
         }
         if (profile?.role === 'EV_OWNER') {
-          const { error: roleError } = await supabase.from('profiles').update({ role: 'BOTH' }).eq('id', user.id)
+          const { data: updatedProfiles, error: roleError } = await supabase
+            .from('profiles')
+            .update({ role: 'BOTH' })
+            .eq('id', user.id)
+            .select('id')
           if (roleError) {
             setErrorMessage(`Provider created, but account role could not be updated: ${roleError.message}`)
+            return
+          }
+          if (!updatedProfiles || updatedProfiles.length === 0) {
+            setErrorMessage('Could not update your account role. Please try again or contact support.')
             return
           }
         }

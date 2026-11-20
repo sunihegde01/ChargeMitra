@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
+import { MapPinOff } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { ChargerMap } from '../../components/ChargerMap'
+import { SarvamSearch, type ChargerSearchFilters } from '../../components/SarvamSearch'
+import { EmptyState, Skeleton, Spinner, StatusPill } from '../../components/ui'
 import { useAuth } from '../../context/AuthContext'
 import { parsePoint, type Point } from '../../location'
 import { getDefaultVehicleId, setDefaultVehicleId } from '../../vehiclePreference'
@@ -58,39 +61,56 @@ export default function FindChargerPage() {
   const [roadDistanceStatus, setRoadDistanceStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [pickingLocation, setPickingLocation] = useState(false)
   const [locating, setLocating] = useState(false)
+  const [searchFilters, setSearchFilters] = useState<ChargerSearchFilters | null>(null)
   const [selectedChargerId, setSelectedChargerId] = useState('')
   const [vehicleId, setVehicleId] = useState('')
   const [startsAt, setStartsAt] = useState('')
   const [endsAt, setEndsAt] = useState('')
+  const [chargersLoading, setChargersLoading] = useState(true)
+  const [chargerLoadError, setChargerLoadError] = useState('')
   const [savingId, setSavingId] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
 
   const loadChargers = useCallback(async () => {
-    if (!user) return
-    setErrorMessage('')
-    const [chargerResult, providerResult, vehicleResult] = await Promise.all([
-      supabase.from('chargers').select('id,provider_id,name,charger_type,rated_power_kw,site_power_limit_kw,connector_type,price_per_kwh').eq('is_active', true),
-      supabase.from('providers').select('id,business_name,business_type,address,location'),
-      supabase.from('vehicles').select('id,brand,model,max_ac_kw,max_dc_kw').eq('owner_id', user.id),
-    ])
-
-    const firstError = chargerResult.error ?? providerResult.error ?? vehicleResult.error
-    if (firstError) {
-      setErrorMessage(firstError.message)
+    if (!user) {
+      setChargersLoading(false)
       return
     }
-    setChargers(chargerResult.data ?? [])
-    setProviders((providerResult.data ?? []) as Provider[])
-    const vehicleRows = vehicleResult.data ?? []
-    setVehicles(vehicleRows)
-    const savedVehicleId = getDefaultVehicleId(user.id)
-    const nextDefaultVehicleId = vehicleRows.some((vehicle) => vehicle.id === savedVehicleId)
-      ? savedVehicleId
-      : vehicleRows[0]?.id ?? ''
-    setVehicleId(nextDefaultVehicleId)
-    if (nextDefaultVehicleId && savedVehicleId !== nextDefaultVehicleId) {
-      setDefaultVehicleId(user.id, nextDefaultVehicleId)
+    setChargersLoading(true)
+    setChargerLoadError('')
+    setErrorMessage('')
+    try {
+      const [chargerResult, providerResult, vehicleResult] = await Promise.all([
+        supabase.from('chargers').select('id,provider_id,name,charger_type,rated_power_kw,site_power_limit_kw,connector_type,price_per_kwh').eq('is_active', true),
+        supabase.from('providers').select('id,business_name,business_type,address,location'),
+        supabase.from('vehicles').select('id,brand,model,max_ac_kw,max_dc_kw').eq('owner_id', user.id),
+      ])
+
+      const firstError = chargerResult.error ?? providerResult.error ?? vehicleResult.error
+      if (firstError) {
+        setChargerLoadError(firstError.message)
+        setErrorMessage(firstError.message)
+        return
+      }
+      setChargers(chargerResult.data ?? [])
+      setProviders((providerResult.data ?? []) as Provider[])
+      const vehicleRows = vehicleResult.data ?? []
+      setVehicles(vehicleRows)
+      const savedVehicleId = getDefaultVehicleId(user.id)
+      const nextDefaultVehicleId = vehicleRows.some((vehicle) => vehicle.id === savedVehicleId)
+        ? savedVehicleId
+        : vehicleRows[0]?.id ?? ''
+      setVehicleId(nextDefaultVehicleId)
+      if (nextDefaultVehicleId && savedVehicleId !== nextDefaultVehicleId) {
+        setDefaultVehicleId(user.id, nextDefaultVehicleId)
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not load charging points.'
+      setChargerLoadError(message)
+      setErrorMessage(message)
+    } finally {
+      setChargersLoading(false)
     }
   }, [user])
 
@@ -164,7 +184,8 @@ export default function FindChargerPage() {
   }, [distanceOrigin, providers])
 
   const visibleChargers = useMemo(() => {
-    const term = search.trim().toLowerCase()
+    const hasStructuredFilters = Boolean(searchFilters && Object.values(searchFilters).some((value) => value !== null))
+    const term = hasStructuredFilters ? '' : search.trim().toLowerCase()
     const matchesSearch = term ? chargers.filter((charger) => {
       const provider = providers.find((item) => item.id === charger.provider_id)
       return [charger.name, charger.charger_type, charger.connector_type, provider?.business_name, provider?.business_type, provider?.address]
@@ -173,7 +194,16 @@ export default function FindChargerPage() {
     const filteredChargers = matchesSearch.filter((charger) => {
       const provider = providers.find((item) => item.id === charger.provider_id)
       const businessTypeMatches = !businessTypeFilters.length || businessTypeFilters.includes(provider?.business_type ?? '')
-      return businessTypeMatches
+      const locationMatches = !searchFilters?.location
+        || [provider?.business_name, provider?.address]
+          .some((value) => value?.toLowerCase().includes(searchFilters.location!.toLowerCase()))
+      const connectorMatches = !searchFilters?.connector_type
+        || charger.connector_type.toLowerCase().includes(searchFilters.connector_type.toLowerCase())
+      const powerMatches = searchFilters?.minimum_power_kw == null
+        || Number(charger.rated_power_kw) >= searchFilters.minimum_power_kw
+      const priceMatches = searchFilters?.maximum_price_per_unit == null
+        || Number(charger.price_per_kwh) <= searchFilters.maximum_price_per_unit
+      return businessTypeMatches && locationMatches && connectorMatches && powerMatches && priceMatches
     })
     return filteredChargers.map((charger) => {
       const provider = providers.find((item) => item.id === charger.provider_id)
@@ -186,7 +216,7 @@ export default function FindChargerPage() {
     }).sort((first, second) => distanceOrigin
       ? (first.distance ?? Number.POSITIVE_INFINITY) - (second.distance ?? Number.POSITIVE_INFINITY)
       : 0)
-  }, [chargers, providers, search, businessTypeFilters, distanceOrigin, roadDistances, roadDistanceStatus])
+  }, [chargers, providers, search, searchFilters, businessTypeFilters, distanceOrigin, roadDistances, roadDistanceStatus])
 
   const mappedChargers = useMemo(() => visibleChargers.flatMap(({ charger, point, distance }) => point ? [{
     charger,
@@ -206,6 +236,27 @@ export default function FindChargerPage() {
     ? nearbyChargers.find(({ distance }) => distance !== null)?.charger.id
     : undefined
   const selectedCharger = nearbyChargers.find(({ charger }) => charger.id === selectedChargerId)
+
+  useEffect(() => {
+    if (selectedChargerId && !nearbyChargers.some(({ charger }) => charger.id === selectedChargerId)) {
+      setSelectedChargerId('')
+    }
+  }, [nearbyChargers, selectedChargerId])
+
+  function applySearch(query: string, filters: ChargerSearchFilters) {
+    setSearch(query)
+    setSearchFilters(filters)
+    if (filters.date) {
+      const start = new Date(`${filters.date}T${filters.time || '09:00'}`)
+      if (!Number.isNaN(start.getTime())) {
+        const end = new Date(start.getTime() + 60 * 60 * 1000)
+        const toLocalInput = (date: Date) => new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+          .toISOString().slice(0, 16)
+        setStartsAt(toLocalInput(start))
+        setEndsAt(toLocalInput(end))
+      }
+    }
+  }
 
   function selectMapLocation(point: Point) {
     setErrorMessage('')
@@ -315,28 +366,33 @@ export default function FindChargerPage() {
     setSavingId(charger.id)
     setErrorMessage('')
     setSuccessMessage('')
-    const { error } = await supabase.from('bookings').insert({
-      owner_id: user.id,
-      vehicle_id: vehicleId,
-      charger_id: charger.id,
-      provider_id: charger.provider_id,
-      scheduled_start: start.toISOString(),
-      scheduled_end: end.toISOString(),
-      price_per_kwh_snapshot: charger.price_per_kwh,
-      payment_method: 'PAY_AT_STATION',
-      estimated_total_snapshot: estimatedTotalMaxSnapshot,
-      estimated_total_min_snapshot: estimatedTotalMinSnapshot,
-      estimated_total_max_snapshot: estimatedTotalMaxSnapshot,
-    })
+    try {
+      const { error } = await supabase.from('bookings').insert({
+        owner_id: user.id,
+        vehicle_id: vehicleId,
+        charger_id: charger.id,
+        provider_id: charger.provider_id,
+        scheduled_start: start.toISOString(),
+        scheduled_end: end.toISOString(),
+        price_per_kwh_snapshot: charger.price_per_kwh,
+        payment_method: 'PAY_AT_STATION',
+        estimated_total_snapshot: estimatedTotalMaxSnapshot,
+        estimated_total_min_snapshot: estimatedTotalMinSnapshot,
+        estimated_total_max_snapshot: estimatedTotalMaxSnapshot,
+      })
 
-    if (error?.code === '23P01' || error?.message.includes('no_overlap')) {
-      setErrorMessage('This charger is already booked for part or all of that time. Choose another time slot or charger.')
-    } else if (error) {
-      setErrorMessage(error.message)
-    } else {
-      setSuccessMessage(`Booking request sent to ${charger.name}.`)
+      if (error?.code === '23P01' || error?.message.includes('no_overlap')) {
+        setErrorMessage('This charger is already booked for part or all of that time. Choose another time slot or charger.')
+      } else if (error) {
+        setErrorMessage(error.message)
+      } else {
+        setSuccessMessage(`Booking request sent to ${charger.name}.`)
+      }
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Could not request this booking.')
+    } finally {
+      setSavingId('')
     }
-    setSavingId('')
   }
 
   const selectedChargerDetails = selectedCharger
@@ -390,7 +446,10 @@ export default function FindChargerPage() {
             Search chargers
             <input
               className={fieldClass}
-              onChange={(event) => setSearch(event.target.value)}
+              onChange={(event) => {
+                setSearchFilters(null)
+                setSearch(event.target.value)
+              }}
               placeholder="Search by name, connector, or location"
               type="search"
               value={search}
@@ -413,6 +472,7 @@ export default function FindChargerPage() {
               ))}
             </div>
           </fieldset>
+          <SarvamSearch onApply={applySearch} />
           <div className="flex flex-col gap-3 sm:flex-row">
             <button
               className={`rounded-full px-6 py-3 font-semibold text-white ${pickingLocation ? 'bg-fuchsia-700' : 'bg-slate-900'}`}
@@ -432,21 +492,101 @@ export default function FindChargerPage() {
             Click anywhere on the map to set your location and find the nearest charging points.
           </p>
         )}
-        {errorMessage && <p className="mt-5 rounded-xl bg-red-50 p-4 text-red-800" role="alert">{errorMessage}</p>}
+        {errorMessage && !chargerLoadError && <p className="mt-5 rounded-xl bg-red-50 p-4 text-red-800" role="alert">{errorMessage}</p>}
         {successMessage && <p className="mt-5 rounded-xl bg-emerald-50 p-4 text-emerald-800" role="status">{successMessage}</p>}
 
-        <section className="mt-6 overflow-hidden rounded-3xl border border-slate-200 bg-white p-2">
-          <ChargerMap
-            chargers={pins}
-            center={searchCenter}
-            nearestChargerId={nearestMappedChargerId}
-            onChargerSelect={setSelectedChargerId}
-            selectedChargerId={selectedChargerId}
-            userLocation={userLocation}
-            pickingLocation={pickingLocation}
-            onMapLocationSelect={handleMapLocationSelect}
-            key={`${searchCenter.lat},${searchCenter.lng}`}
-          />
+        <section className="mt-6 grid items-start gap-5 lg:grid-cols-[2fr_3fr]">
+          <div className="order-2 min-w-0 lg:order-1">
+            <h2 className="mb-3 text-lg font-semibold">Nearby chargers</h2>
+            <div className="min-h-28 max-h-[calc(100vh-360px)] overflow-y-auto lg:max-h-[500px]">
+              {chargersLoading ? (
+                <div aria-label="Loading chargers" className="space-y-3" role="status">
+                  {[0, 1, 2].map((item) => (
+                    <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4" key={item}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <Skeleton className="max-w-40" height={18} />
+                          <Skeleton className="mt-2 max-w-56" height={14} />
+                          <Skeleton className="mt-2 max-w-48" height={12} />
+                        </div>
+                        <Skeleton className="shrink-0 rounded-full" height={24} width={84} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : chargerLoadError ? (
+                <p className="rounded-xl bg-red-50 p-4 text-sm text-red-800" role="alert">{chargerLoadError}</p>
+              ) : nearbyChargers.length ? (
+                <ul className="space-y-3">
+                  {nearbyChargers.map(({ charger, distance }) => {
+                    const provider = providers.find((item) => item.id === charger.provider_id)
+                    const selected = charger.id === selectedChargerId
+                    return (
+                      <li key={charger.id}>
+                        <button
+                          aria-pressed={selected}
+                          className={`w-full rounded-2xl border p-4 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus)] ${selected ? 'border-[var(--color-brand)] bg-[var(--color-brand)]/5' : 'border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-brand)]'}`}
+                          onClick={() => setSelectedChargerId(charger.id)}
+                          type="button"
+                        >
+                          <span className="flex min-w-0 items-start justify-between gap-3">
+                            <span className="min-w-0">
+                              <span className="block break-words font-display text-[15px] font-semibold text-[var(--color-text)]">
+                                {provider?.business_name ?? 'Charging provider'}
+                              </span>
+                              <span className="mt-1 block break-words text-[13px] text-[var(--color-text-muted)]">
+                                {charger.name}
+                              </span>
+                              <span className="mt-1 block text-xs text-[var(--color-text-muted)]">
+                                {Number(charger.rated_power_kw)} kW · {charger.connector_type} · ₹{charger.price_per_kwh}/kWh
+                              </span>
+                              {distance !== null ? (
+                                <span className="mt-2 block text-xs font-medium text-[var(--color-text-muted)]">
+                                  {formatRoadDistance(distance)} by road
+                                </span>
+                              ) : distanceOrigin && roadDistanceStatus === 'loading' ? (
+                                <span className="mt-2 block text-xs text-[var(--color-text-muted)]">Calculating distance...</span>
+                              ) : null}
+                            </span>
+                            <StatusPill className="shrink-0" label="Available" variant="success" />
+                          </span>
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+              ) : (
+                <EmptyState
+                  description="Try expanding your search radius or changing filters."
+                  icon={MapPinOff}
+                  title="No chargers found nearby"
+                />
+              )}
+            </div>
+          </div>
+
+          <div className="order-1 min-w-0 lg:order-2">
+            <section className="relative overflow-hidden rounded-3xl border border-slate-200 bg-white p-2">
+              <div className="h-[320px] lg:h-[500px]">
+                <ChargerMap
+                  chargers={pins}
+                  center={searchCenter}
+                  nearestChargerId={nearestMappedChargerId}
+                  onChargerSelect={setSelectedChargerId}
+                  selectedChargerId={selectedChargerId}
+                  userLocation={userLocation}
+                  pickingLocation={pickingLocation}
+                  onMapLocationSelect={handleMapLocationSelect}
+                  key={`${searchCenter.lat},${searchCenter.lng}`}
+                />
+              </div>
+              {chargersLoading && (
+                <div className="absolute inset-2 z-10 grid place-items-center rounded-2xl bg-white/80">
+                  <Spinner size="lg" />
+                </div>
+              )}
+            </section>
+          </div>
         </section>
 
         {selectedChargerDetails && (

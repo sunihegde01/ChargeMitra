@@ -7,6 +7,7 @@ import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage.tsx'
 import OwnerDashboard from './pages/owner/OwnerDashboard'
 import FindChargerPage from './pages/owner/FindChargerPage'
+import PaymentHistory from './pages/owner/PaymentHistory'
 import ProviderDashboard from './pages/provider/ProviderDashboard'
 import AddChargerPage from './pages/provider/AddChargerPage'
 import HostOnboardingPage from './pages/provider/HostOnboardingPage'
@@ -36,6 +37,9 @@ export default function App() {
       } />
       <Route path="/owner/find" element={
         <ProtectedRoute><FindChargerPage /></ProtectedRoute>
+      } />
+      <Route path="/owner/payments" element={
+        <ProtectedRoute><PaymentHistory /></ProtectedRoute>
       } />
 
       <Route path="/provider/dashboard" element={

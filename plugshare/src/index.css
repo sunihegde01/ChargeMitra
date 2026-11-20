@@ -141,3 +141,28 @@ main {
     transition-duration: 0.01ms !important;
   }
 }
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  .receipt-print,
+  .receipt-print * {
+    visibility: visible;
+  }
+
+  .receipt-print {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 24px;
+    color: #000 !important;
+    background: white !important;
+  }
+
+  .receipt-print .no-print {
+    display: none !important;
+  }
+}

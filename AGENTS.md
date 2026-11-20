@@ -2,6 +2,8 @@
 
 Every new page, feature, component or frontend modification in ChargeMitra must follow `CHARGEMITRA_DESIGN_SYSTEM.md`.
 
+Read `PROJECT_OVERVIEW.md` for the current implementation, route map, backend layout, and known gaps before making architectural assumptions.
+
 Before developing a new feature, inspect the existing reusable components and styling conventions.
 
 Reuse existing components whenever possible.

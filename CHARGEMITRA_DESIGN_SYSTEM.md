@@ -66,7 +66,8 @@ Reuse existing components and established Tailwind patterns before creating a ne
 ## Animation
 
 - Prefer brief, purposeful hover/focus transitions and subtle opacity or transform changes.
-- Do not add a new animation dependency for decorative effects. There is no dedicated animation library in the current frontend.
+- The `motion` package is present in `plugshare/package.json`, but no current frontend source imports it. Prefer CSS transitions for ordinary interaction; use the existing package only when an interaction genuinely benefits from it.
+- Do not add a new animation dependency for decorative effects.
 - Never imply fake charger availability, booking progress, battery telemetry, or payment status.
 - The global stylesheet respects `prefers-reduced-motion`; new motion must remain optional and non-blocking.
 

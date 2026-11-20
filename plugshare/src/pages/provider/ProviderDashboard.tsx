@@ -26,6 +26,8 @@ export default function ProviderDashboard() {
   const [savingBookingId, setSavingBookingId] = useState('')
   const [savingChargerId, setSavingChargerId] = useState('')
   const [savingBusinessType, setSavingBusinessType] = useState(false)
+  const [signOutLoading, setSignOutLoading] = useState(false)
+  const [signOutError, setSignOutError] = useState('')
   const [calculationMethods, setCalculationMethods] = useState<Record<string, CalculationMethod | ''>>({})
   const [errorMessage, setErrorMessage] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
@@ -172,6 +174,18 @@ export default function ProviderDashboard() {
     setSavingBusinessType(false)
   }
 
+  async function handleSignOut() {
+    setSignOutLoading(true)
+    setSignOutError('')
+    try {
+      await signOut()
+    } catch {
+      setSignOutError('Could not sign out — check your connection')
+    } finally {
+      setSignOutLoading(false)
+    }
+  }
+
   return (
     <main className="min-h-screen bg-[#f7f9f6] px-6 py-8 text-slate-900">
       <div className="mx-auto max-w-5xl">
@@ -183,10 +197,18 @@ export default function ProviderDashboard() {
           </div>
           <div className="flex gap-3">
             <Link className="rounded-full bg-emerald-700 px-5 py-3 font-semibold text-white" to="/provider/chargers/new">Add a charger</Link>
-            <button className="rounded-full border border-slate-300 px-5 py-3 font-semibold" onClick={() => void signOut()}>Sign out</button>
+            <button
+              className="rounded-full border border-slate-300 px-5 py-3 font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={signOutLoading}
+              onClick={() => void handleSignOut()}
+              type="button"
+            >
+              {signOutLoading ? 'Signing out...' : 'Sign out'}
+            </button>
           </div>
         </header>
 
+        {signOutError && <p className="mt-2 text-sm text-red-700" role="alert">{signOutError}</p>}
         {errorMessage && <p className="mt-6 rounded-xl bg-red-50 p-4 text-red-800" role="alert">{errorMessage}</p>}
         {successMessage && <p className="mt-6 rounded-xl bg-emerald-50 p-4 text-emerald-800" role="status">{successMessage}</p>}
         {loading ? <p className="mt-8 text-slate-600">Loading provider dashboard...</p> : !provider ? (

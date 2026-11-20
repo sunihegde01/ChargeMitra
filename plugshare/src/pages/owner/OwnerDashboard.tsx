@@ -135,6 +135,8 @@ export default function OwnerDashboard() {
   const [homeDetailsByProvider, setHomeDetailsByProvider] = useState<Record<string, AcceptedHomeDetails>>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [signOutLoading, setSignOutLoading] = useState(false)
+  const [signOutError, setSignOutError] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
   const [defaultVehicleId, setDefaultVehicleIdState] = useState('')
@@ -350,6 +352,18 @@ export default function OwnerDashboard() {
 
   const defaultVehicle = vehicles.find((vehicle) => vehicle.id === defaultVehicleId)
 
+  async function handleSignOut() {
+    setSignOutLoading(true)
+    setSignOutError('')
+    try {
+      await signOut()
+    } catch {
+      setSignOutError('Could not sign out — check your connection')
+    } finally {
+      setSignOutLoading(false)
+    }
+  }
+
   return (
     <main className="min-h-screen bg-[#f7f9f6] px-6 py-8 text-slate-900">
       <div className="mx-auto max-w-5xl">
@@ -359,9 +373,17 @@ export default function OwnerDashboard() {
             <h1 className="mt-3 text-3xl font-semibold">User dashboard</h1>
             <p className="mt-1 text-slate-600">Manage your vehicles and charging bookings.</p>
           </div>
-          <button className="rounded-full border border-slate-300 px-5 py-3 font-semibold" onClick={() => void signOut()}>Sign out</button>
+          <button
+            className="rounded-full border border-slate-300 px-5 py-3 font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={signOutLoading}
+            onClick={() => void handleSignOut()}
+            type="button"
+          >
+            {signOutLoading ? 'Signing out...' : 'Sign out'}
+          </button>
         </header>
 
+        {signOutError && <p className="mt-2 text-sm text-red-700" role="alert">{signOutError}</p>}
         {errorMessage && <p className="mt-6 rounded-xl bg-red-50 p-4 text-red-800" role="alert">{errorMessage}</p>}
         {successMessage && <p className="mt-6 rounded-xl bg-emerald-50 p-4 text-emerald-800" role="status">{successMessage}</p>}
 

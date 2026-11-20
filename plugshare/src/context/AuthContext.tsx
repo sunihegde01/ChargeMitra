@@ -22,20 +22,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
+    let active = true
+    let receivedAuthState = false
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      receivedAuthState = true
+      setSession(nextSession)
       setLoading(false)
     })
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session)
-    })
+    async function restoreSession() {
+      try {
+        const { data: { session: initialSession }, error } = await supabase.auth.getSession()
+        if (error) throw error
+        if (active && !receivedAuthState) setSession(initialSession)
+      } catch (error) {
+        if (active) console.error('Unable to restore the current auth session:', error)
+      } finally {
+        if (active) setLoading(false)
+      }
+    }
 
-    return () => listener.subscription.unsubscribe()
+    void restoreSession()
+
+    return () => {
+      active = false
+      listener.subscription.unsubscribe()
+    }
   }, [])
 
   const signOut = async () => {
-    await supabase.auth.signOut()
+    const { error } = await supabase.auth.signOut()
+    if (error) throw error
   }
 
   return (

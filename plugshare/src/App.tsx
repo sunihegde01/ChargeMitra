@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './context/AuthContext'
+import { Spinner } from './components/ui/Spinner'
 import LandingPage from './pages/LandingPage'
 import AccountTypePage from './pages/AccountTypePage'
 import LoginPage from './pages/LoginPage'
@@ -13,7 +14,9 @@ import ActiveSessionPage from './pages/shared/ActiveSessionPage'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth()
-  if (loading) return <div className="p-8">Loading...</div>
+  if (loading) {
+    return <div className="flex h-screen items-center justify-center"><Spinner size="lg" /></div>
+  }
   if (!session) return <Navigate to="/login" replace />
   return <>{children}</>
 }

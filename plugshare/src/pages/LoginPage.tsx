@@ -1,10 +1,21 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, Navigate, useNavigate } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
 import { Button, LinkButton } from '../components/Button'
+import { Spinner } from '../components/ui/Spinner'
 import { supabase } from '../supabase'
 
 export default function LoginPage() {
+  const { session, loading: authLoading } = useAuth()
+  if (authLoading) {
+    return <div className="flex min-h-screen items-center justify-center"><Spinner size="md" /></div>
+  }
+  if (session) return <Navigate to="/account-type" replace />
+  return <LoginForm />
+}
+
+function LoginForm() {
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')

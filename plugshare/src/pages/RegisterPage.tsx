@@ -1,10 +1,21 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
 import { Button, LinkButton } from '../components/Button'
+import { Spinner } from '../components/ui/Spinner'
 import { supabase } from '../supabase'
 
 export default function RegisterPage() {
+  const { session, loading: authLoading } = useAuth()
+  if (authLoading) {
+    return <div className="flex min-h-screen items-center justify-center"><Spinner size="md" /></div>
+  }
+  if (session) return <Navigate to="/account-type" replace />
+  return <RegisterForm />
+}
+
+function RegisterForm() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const [accountType, setAccountType] = useState<'EV_OWNER' | 'PROVIDER'>(
